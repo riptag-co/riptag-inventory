@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import { Pool } from 'pg';
+import fs from 'fs';
+import path from 'path';
 
 const SCHEMA_SQL = `
 do $$ begin
@@ -129,6 +131,36 @@ async function main() {
     console.log('Running migrations...');
     await pool.query(SCHEMA_SQL);
     console.log('✓ Schema ready.');
+
+    // Idempotent catalog seed from scripts/seed-catalog.json
+    // - Each product only gets inserted if its SKU doesn't already exist.
+    // - Editing a product later in the UI does NOT get overwritten by this seed.
+    try {
+      const seedPath = path.resolve(__dirname, 'seed-catalog.json');
+      if (fs.existsSync(seedPath)) {
+        const raw = fs.readFileSync(seedPath, 'utf8');
+        const items = JSON.parse(raw) as Array<{
+          sku: string;
+          name: string;
+          imageUrl?: string | null;
+          suggestedPrice?: number | null;
+        }>;
+        let inserted = 0;
+        for (const it of items) {
+          const res = await pool.query(
+            `insert into products (sku, name, image_url, unit_cost, unit_weight_kg, status)
+             values ($1, $2, $3, $4, 0, 'active')
+             on conflict (sku) do nothing
+             returning sku`,
+            [it.sku, it.name, it.imageUrl ?? null, it.suggestedPrice != null ? String(it.suggestedPrice) : '0']
+          );
+          if (res.rowCount && res.rowCount > 0) inserted++;
+        }
+        if (inserted > 0) console.log(`✓ Catalog seeded: ${inserted} new product(s) from seed-catalog.json`);
+      }
+    } catch (e: any) {
+      console.warn('Catalog seed step failed (non-fatal):', e?.message ?? e);
+    }
 
     // One-time data fix: any draft orders still using the old PO-XXX numbering
     // get renamed to DRAFT-XXX so PO numbers stay reserved for confirmed orders.
