@@ -86,12 +86,15 @@ export async function updateOrder(id: string, field: string, value: any) {
 
 export async function createOrder(opts: { status?: 'draft' | 'pending_payment' } = {}) {
   await requireOwner();
-  const id = await nextId('orders', 'PO');
+  const status = opts.status ?? 'pending_payment';
+  // Drafts get a DRAFT- prefix so PO-XXX numbers stay reserved for confirmed orders.
+  const prefix = status === 'draft' ? 'DRAFT' : 'PO';
+  const id = await nextId('orders', prefix);
   const today = new Date().toISOString().slice(0, 10);
   await db.insert(orders).values({
     id,
     orderDate: today,
-    status: opts.status ?? 'pending_payment',
+    status,
     shippingCost: '0',
     paid: false,
   });
@@ -100,7 +103,7 @@ export async function createOrder(opts: { status?: 'draft' | 'pending_payment' }
   return id;
 }
 
-export async function promoteDraftOrder(orderId: string) {
+export async function promoteDraftOrder(orderId: string): Promise<{ newId: string }> {
   await requireOwner();
   const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!order) throw new Error('Order not found');
@@ -114,11 +117,35 @@ export async function promoteDraftOrder(orderId: string) {
     throw new Error(`${unpriced.length} item(s) missing a price. Wait for supplier to quote.`);
   }
 
-  await db.update(orders).set({ status: 'pending_payment', updatedAt: new Date() }).where(eq(orders.id, orderId));
+  let newId = orderId;
+
+  if (orderId.startsWith('DRAFT-')) {
+    // Mint a fresh PO-XXX number and swap the IDs. Done as a transaction so order_items don't get orphaned.
+    newId = await nextId('orders', 'PO');
+    await db.transaction(async (tx) => {
+      await tx.insert(orders).values({
+        id: newId,
+        orderDate: order.orderDate,
+        status: 'pending_payment',
+        shippingCost: order.shippingCost,
+        paid: false,
+        paymentDate: null,
+        notes: order.notes,
+      });
+      await tx.update(orderItems).set({ orderId: newId }).where(eq(orderItems.orderId, orderId));
+      await tx.delete(orders).where(eq(orders.id, orderId));
+    });
+  } else {
+    // Legacy: a draft that already has a PO-XXX id (created before this change). Just flip status.
+    await db.update(orders).set({ status: 'pending_payment', updatedAt: new Date() }).where(eq(orders.id, orderId));
+  }
+
   revalidatePath('/orders');
   revalidatePath('/new-orders');
   revalidatePath(`/orders/${orderId}`);
+  revalidatePath(`/orders/${newId}`);
   revalidatePath('/dashboard');
+  return { newId };
 }
 
 export async function revertToDraft(orderId: string) {

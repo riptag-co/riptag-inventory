@@ -66,8 +66,12 @@ export function OrderHeader({
     setError(null);
     startTransition(async () => {
       try {
-        await promoteDraftOrder(orderId);
-        router.refresh();
+        const { newId } = await promoteDraftOrder(orderId);
+        if (newId !== orderId) {
+          router.push(`/orders/${newId}`);
+        } else {
+          router.refresh();
+        }
       } catch (e: any) {
         setError(e?.message ?? 'Could not promote');
       }
