@@ -1,20 +1,25 @@
 import { requireUser } from '@/lib/auth';
 import { getAllProducts } from '@/lib/db/queries';
 import { PageHeader } from '@/components/ui';
-import { CatalogTable } from './table';
+import { CatalogGrid } from './grid';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CatalogPage() {
   const user = await requireUser();
   const products = await getAllProducts();
+  const cards = products.map((p: any) => ({
+    sku: p.sku,
+    name: p.name,
+    imageUrl: p.imageUrl ?? null,
+  }));
   return (
     <>
       <PageHeader
         title="Catalog"
-        subtitle="Master list of every product. SKU is the key referenced everywhere else."
+        subtitle="Visual reference. Tap a product to see what it looks like."
       />
-      <CatalogTable products={products as any} readOnly={user.role !== 'owner'} />
+      <CatalogGrid products={cards} readOnly={user.role !== 'owner'} />
     </>
   );
 }

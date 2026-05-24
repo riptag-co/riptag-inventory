@@ -25,6 +25,26 @@ function coerceInt(v: any): number {
 
 export async function updateProduct(sku: string, field: string, value: any) {
   await requireOwner();
+
+  if (field === 'sku') {
+    const newSku = String(value ?? '').trim().toUpperCase();
+    if (!newSku || newSku === sku) return;
+    const [orderRef, shipRef, taken] = await Promise.all([
+      db.select({ id: orderItems.id }).from(orderItems).where(eq(orderItems.sku, sku)).limit(1),
+      db.select({ id: shipmentItems.id }).from(shipmentItems).where(eq(shipmentItems.sku, sku)).limit(1),
+      db.select({ sku: products.sku }).from(products).where(eq(products.sku, newSku)).limit(1),
+    ]);
+    if (taken.length) throw new Error(`SKU "${newSku}" already exists`);
+    if (orderRef.length || shipRef.length) {
+      throw new Error('Cannot rename — this SKU is referenced by existing orders or shipments. Delete those first, or create a new product instead.');
+    }
+    await db.update(products).set({ sku: newSku, updatedAt: new Date() }).where(eq(products.sku, sku));
+    revalidatePath('/catalog');
+    revalidatePath('/orders');
+    revalidatePath('/shipments');
+    return;
+  }
+
   const patch: any = { updatedAt: new Date() };
   if (field === 'unitCost' || field === 'unitWeightKg') patch[field] = String(coerceNumber(value));
   else patch[field] = value === '' ? null : value;

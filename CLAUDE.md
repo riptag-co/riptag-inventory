@@ -64,19 +64,35 @@ Permissions enforced in `app/actions.ts` via `requireOwner()` or `requireUser()`
 
 ## Deployment
 
-Target is Railway with built-in Postgres. The project includes `railway.json` configured for Nixpacks. Environment variables required:
+Target is Railway with built-in Postgres. The project includes `railway.json` configured for Nixpacks.
+
+**Environment variables required:**
 
 ```
-DATABASE_URL          # injected by Railway when Postgres addon is linked
+DATABASE_URL          # injected by Railway when Postgres addon is linked via Reference
 SESSION_SECRET        # any 40+ char random string
 OWNER_EMAIL           # owner login
 OWNER_PASSWORD        # owner login
 SUPPLIER_EMAIL        # supplier login
 SUPPLIER_PASSWORD     # supplier login
 SEED                  # "true" only on first deploy to insert seed data
+STORAGE_PATH          # optional, defaults to /data — where catalog images are written
 ```
 
-`scripts/migrate.ts` runs automatically via `npm install` → `postinstall`. It is idempotent: safe to re-run, won't duplicate users, only seeds when `SEED=true` AND `products` table is empty.
+**Build vs. runtime split:**
+- Build: `npm install && npm run build` (no DB access required)
+- Runtime: `npm run db:migrate && npm run start` — `scripts/migrate.ts` runs at startup (DB is reachable then), is idempotent, bootstraps users from env vars, optionally seeds when `SEED=true` AND `products` is empty.
+
+**Required Railway Volume for image uploads:**
+
+Catalog product images are stored on the filesystem at `STORAGE_PATH` (default `/data`). Railway containers are ephemeral, so you MUST mount a persistent Volume at this path or every redeploy will wipe all uploaded images.
+
+One-time setup in Railway dashboard:
+1. App service → `Settings` → `Volumes` (or `Storage`)
+2. `Create Volume` → mount path: `/data` → pick a size (1 GB is plenty)
+3. Save. Railway redeploys with the volume attached.
+
+After this, images written to `/data/catalog/*` persist across deploys. They are served back via the `/api/files/[...path]` route.
 
 ## Coding conventions
 
