@@ -207,6 +207,109 @@ export async function getAllWishlist() {
   return await db.select().from(wishlist).orderBy(desc(wishlist.createdAt));
 }
 
+export type ShipmentBoxItem = {
+  shipmentItemId: string;
+  orderId: string;
+  sku: string;
+  productName: string | null;
+  imageUrl: string | null;
+  qty: number;
+};
+
+export type ShipmentBox = {
+  id: string;
+  carrier: string | null;
+  trackingNumber: string | null;
+  status: string;
+  shipDate: string | null;
+  eta: string | null;
+  actualDelivery: string | null;
+  notes: string | null;
+  createdAt: Date;
+  totalQty: number;
+  itemCount: number;
+  contents: ShipmentBoxItem[];
+};
+
+export async function getAllShipmentBoxes(): Promise<ShipmentBox[]> {
+  const rows = await db.execute<{
+    id: string;
+    carrier: string | null;
+    tracking_number: string | null;
+    status: string;
+    ship_date: string | null;
+    eta: string | null;
+    actual_delivery: string | null;
+    notes: string | null;
+    created_at: Date;
+    ship_item_id: string | null;
+    order_id: string | null;
+    sku: string | null;
+    product_name: string | null;
+    image_url: string | null;
+    qty: number | null;
+    item_created_at: Date | null;
+  }>(sql`
+    select
+      s.id,
+      s.carrier,
+      s.tracking_number,
+      s.status::text as status,
+      to_char(s.ship_date, 'YYYY-MM-DD') as ship_date,
+      to_char(s.eta, 'YYYY-MM-DD') as eta,
+      to_char(s.actual_delivery, 'YYYY-MM-DD') as actual_delivery,
+      s.notes,
+      s.created_at,
+      si.id as ship_item_id,
+      si.order_id,
+      si.sku,
+      p.name as product_name,
+      p.image_url,
+      si.qty,
+      si.created_at as item_created_at
+    from shipments s
+    left join shipment_items si on si.shipment_id = s.id
+    left join products p on p.sku = si.sku
+    order by s.created_at desc, si.created_at asc
+  `);
+
+  const boxMap = new Map<string, ShipmentBox>();
+  for (const r of rows.rows) {
+    let box = boxMap.get(r.id);
+    if (!box) {
+      box = {
+        id: r.id,
+        carrier: r.carrier,
+        trackingNumber: r.tracking_number,
+        status: r.status,
+        shipDate: r.ship_date,
+        eta: r.eta,
+        actualDelivery: r.actual_delivery,
+        notes: r.notes,
+        createdAt: r.created_at,
+        totalQty: 0,
+        itemCount: 0,
+        contents: [],
+      };
+      boxMap.set(r.id, box);
+    }
+    if (r.ship_item_id && r.order_id && r.sku && r.qty != null) {
+      box.contents.push({
+        shipmentItemId: r.ship_item_id,
+        orderId: r.order_id,
+        sku: r.sku,
+        productName: r.product_name,
+        imageUrl: r.image_url,
+        qty: Number(r.qty),
+      });
+      box.totalQty += Number(r.qty);
+      box.itemCount += 1;
+    }
+  }
+
+  return Array.from(boxMap.values());
+}
+
 export async function getShipmentContents(shipmentId: string) {
   const rows = await db.execute<{
     id: string;

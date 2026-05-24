@@ -272,8 +272,33 @@ export async function moveShipmentItem(shipmentItemId: string, newShipmentId: st
 export async function createShipment(_row: any) {
   await requireUser();
   const id = await nextId('shipments', 'SH');
-  await db.insert(shipments).values({ id, status: 'preparing' });
+  await db.insert(shipments).values({ id, status: 'preparing', carrier: 'DHL' });
   revalidatePath('/shipments');
+  return id;
+}
+
+export async function createEmptyShipment(opts: {
+  carrier?: string;
+  trackingNumber?: string;
+  shipDate?: string;
+  eta?: string;
+  notes?: string;
+} = {}) {
+  await requireUser();
+  const id = await nextId('shipments', 'SH');
+  const carrier = opts.carrier || 'DHL';
+  const hasTracking = opts.trackingNumber && opts.trackingNumber.trim().length > 0;
+  await db.insert(shipments).values({
+    id,
+    carrier,
+    trackingNumber: hasTracking ? opts.trackingNumber!.trim() : null,
+    shipDate: opts.shipDate || null,
+    eta: opts.eta || null,
+    notes: opts.notes || null,
+    status: hasTracking ? 'shipped' : 'preparing',
+  });
+  revalidatePath('/shipments');
+  revalidatePath('/dashboard');
   return id;
 }
 

@@ -1,16 +1,17 @@
 import { desc } from 'drizzle-orm';
 import { db, shipments } from '@/lib/db';
-import { getOrderBranching } from '@/lib/db/queries';
+import { getOrderBranching, getAllShipmentBoxes } from '@/lib/db/queries';
 import { requireUser } from '@/lib/auth';
 import { PageHeader } from '@/components/ui';
-import { ShipmentsTree } from './tree';
+import { ShipmentsView } from './shipments-view';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ShipmentsPage() {
   const user = await requireUser();
-  const [branching, allShipments] = await Promise.all([
+  const [branching, boxes, allShipments] = await Promise.all([
     getOrderBranching(),
+    getAllShipmentBoxes(),
     db
       .select({
         id: shipments.id,
@@ -26,10 +27,11 @@ export default async function ShipmentsPage() {
     <>
       <PageHeader
         title="Shipments"
-        subtitle="What's in the box and where it's going. Tap an item to allocate units to a new or existing shipment."
+        subtitle="By Order shows what's been shipped per item. By Box shows every physical shipment and what's inside it."
       />
-      <ShipmentsTree
+      <ShipmentsView
         orders={branching}
+        boxes={boxes}
         existingShipments={allShipments}
         readOnly={user.role !== 'owner' && user.role !== 'supplier'}
         isOwner={user.role === 'owner'}

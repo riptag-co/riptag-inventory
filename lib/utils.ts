@@ -70,6 +70,31 @@ export function normalizeShipmentStatus(status: string): ShipmentStatusChoice {
   return 'shipped';
 }
 
+/** Carriers the supplier actually uses. DHL is the default. */
+export const CARRIERS = ['DHL', 'FedEx'] as const;
+export type Carrier = (typeof CARRIERS)[number];
+export const DEFAULT_CARRIER: Carrier = 'DHL';
+
+/** Returns a tracking URL for known carriers, or null if we don't know how to link it. */
+export function carrierTrackingUrl(carrier: string | null | undefined, tracking: string | null | undefined): string | null {
+  if (!tracking) return null;
+  const t = encodeURIComponent(tracking.trim());
+  switch ((carrier ?? '').toLowerCase()) {
+    case 'dhl':
+      return `https://www.dhl.com/en/express/tracking.html?AWB=${t}`;
+    case 'fedex':
+      return `https://www.fedex.com/fedextrack/?trknbr=${t}`;
+    case 'ups':
+      return `https://www.ups.com/track?tracknum=${t}`;
+    case 'usps':
+      return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${t}`;
+    case 'sf express':
+      return `https://www.sf-express.com/sf-service-web/service/bills/${t}/routes`;
+    default:
+      return null;
+  }
+}
+
 export function statusVariant(status: string): 'ok' | 'warn' | 'bad' | 'info' | 'neutral' {
   // green / done
   if (['complete', 'delivered', 'received', 'paid', 'all_delivered', 'ok'].includes(status)) return 'ok';

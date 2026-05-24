@@ -36,15 +36,18 @@ import {
   deleteShipmentItem,
   updateShipmentItem,
   moveShipmentItem,
+  createEmptyShipment,
 } from '@/app/actions';
 import type { OrderBranch, OrderBranchItem, OrderBranchShipment } from '@/lib/db/queries';
+import { CARRIERS, DEFAULT_CARRIER } from '@/lib/utils';
+import { TrackingLink } from './boxes';
 
 const STATUS_OPTIONS = SHIPMENT_STATUS_CHOICES.map((value) => ({
   value,
   label: value === 'preparing' ? 'Preparing' : value === 'shipped' ? 'Shipped' : 'Delivered',
 }));
 
-const CARRIER_OPTIONS = ['UPS', 'DHL', 'FedEx', 'USPS', 'SF Express', 'Other'];
+const CARRIER_OPTIONS = [...CARRIERS];
 
 function variantClasses(variant: ReturnType<typeof statusVariant>) {
   switch (variant) {
@@ -391,9 +394,7 @@ function AllocationView({
         {shipment.carrier ?? <span className="italic text-text-tertiary">no carrier</span>}
       </span>
 
-      <span className="font-mono text-[11px] text-text-tertiary truncate max-w-[200px]">
-        {shipment.trackingNumber ?? <span className="italic">no tracking</span>}
-      </span>
+      <TrackingLink carrier={shipment.carrier} trackingNumber={shipment.trackingNumber} className="truncate max-w-[200px]" />
 
       <span
         className={cn('inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border', cls.text, cls.bg, cls.border)}
@@ -443,13 +444,27 @@ function AllocationEditor({
 
   const [qty, setQty] = useState(String(shipment.qty));
   const [shipmentId, setShipmentId] = useState(shipment.shipmentId);
-  const [carrier, setCarrier] = useState(shipment.carrier ?? 'UPS');
+  const [carrier, setCarrier] = useState(shipment.carrier ?? DEFAULT_CARRIER);
   const [tracking, setTracking] = useState(shipment.trackingNumber ?? '');
   const [status, setStatus] = useState<string>(normalizeShipmentStatus(shipment.status));
   const [shipDate, setShipDate] = useState(shipment.shipDate ?? '');
   const [eta, setEta] = useState(shipment.eta ?? '');
   const [delivered, setDelivered] = useState(shipment.actualDelivery ?? '');
   const [notes, setNotes] = useState(shipment.notes ?? '');
+  const [creatingNewBox, setCreatingNewBox] = useState(false);
+
+  const handleBoxSelect = (val: string) => {
+    if (val === '__NEW__') {
+      setCreatingNewBox(true);
+    } else {
+      setShipmentId(val);
+    }
+  };
+
+  const handleNewBoxCreated = (newId: string) => {
+    setCreatingNewBox(false);
+    setShipmentId(newId);
+  };
 
   const remove = () => {
     if (!confirm(`Remove ${shipment.qty} units from ${shipment.shipmentId}?`)) return;
@@ -545,7 +560,7 @@ function AllocationEditor({
         <Field label="Shipment box" hint={boxChanged ? '⚠️ moving to a different box' : undefined}>
           <select
             value={shipmentId}
-            onChange={(e) => setShipmentId(e.target.value)}
+            onChange={(e) => handleBoxSelect(e.target.value)}
             className={cn(
               'sheet-input text-[12px]',
               boxChanged && 'border-warn/40 bg-warn/[0.04]'
@@ -558,9 +573,14 @@ function AllocationEditor({
                 {s.trackingNumber ? ` · ${s.trackingNumber.slice(-8)}` : ''}
               </option>
             ))}
+            <option value="__NEW__" className="bg-bg-base text-accent">+ Create a new box…</option>
           </select>
         </Field>
       </div>
+
+      {creatingNewBox && (
+        <InlineNewBox onCreated={handleNewBoxCreated} onCancel={() => setCreatingNewBox(false)} />
+      )}
 
       <div className="border-t border-white/[0.06] pt-3 mb-3">
         <div className="text-[10px] uppercase tracking-wider text-text-tertiary mb-2 inline-flex items-center gap-1.5">
@@ -688,6 +708,85 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
+function InlineNewBox({
+  onCreated,
+  onCancel,
+}: {
+  onCreated: (newId: string) => void;
+  onCancel: () => void;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [carrier, setCarrier] = useState<string>(DEFAULT_CARRIER);
+  const [tracking, setTracking] = useState('');
+  const [shipDate, setShipDate] = useState('');
+  const [eta, setEta] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const create = () => {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const newId = await createEmptyShipment({
+          carrier,
+          trackingNumber: tracking || undefined,
+          shipDate: shipDate || undefined,
+          eta: eta || undefined,
+        });
+        router.refresh();
+        onCreated(newId);
+      } catch (e: any) {
+        setError(e?.message ?? 'Failed to create');
+      }
+    });
+  };
+
+  return (
+    <div className="mt-3 mb-3 p-3 rounded-md bg-accent/[0.04] border border-accent/30">
+      <div className="text-[10px] uppercase tracking-wider text-accent mb-2 font-medium inline-flex items-center gap-1.5">
+        <IconPackage size={11} /> New box
+      </div>
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <Field label="Carrier">
+          <select value={carrier} onChange={(e) => setCarrier(e.target.value)} className="sheet-input text-[12px]">
+            {CARRIER_OPTIONS.map((c) => (
+              <option key={c} value={c} className="bg-bg-base">{c}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Tracking #">
+          <input
+            value={tracking}
+            onChange={(e) => setTracking(e.target.value)}
+            placeholder="optional"
+            className="sheet-input font-mono text-[12px]"
+          />
+        </Field>
+        <Field label="Shipped">
+          <input type="date" value={shipDate} onChange={(e) => setShipDate(e.target.value)} className="sheet-input text-[12px]" />
+        </Field>
+        <Field label="ETA">
+          <input type="date" value={eta} onChange={(e) => setEta(e.target.value)} className="sheet-input text-[12px]" />
+        </Field>
+      </div>
+      {error && <div className="text-[11px] text-bad mb-2">{error}</div>}
+      <div className="flex items-center justify-end gap-2">
+        <button onClick={onCancel} className="px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary">
+          Cancel
+        </button>
+        <button
+          onClick={create}
+          disabled={pending}
+          className="px-2.5 py-1 text-[11px] font-medium bg-accent/90 hover:bg-accent text-white rounded-md disabled:opacity-50 inline-flex items-center gap-1.5"
+        >
+          {pending ? <IconLoader2 size={11} className="animate-spin" /> : <IconPackage size={11} />}
+          Create and use
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ShipSomeForm({
   orderItemId,
   maxQty,
@@ -703,7 +802,7 @@ function ShipSomeForm({
   const [mode, setMode] = useState<'new' | 'existing'>(existingShipments.length > 0 ? 'existing' : 'new');
   const [qty, setQty] = useState(String(maxQty > 0 ? maxQty : ''));
   const [shipmentId, setShipmentId] = useState(existingShipments[0]?.id ?? '');
-  const [carrier, setCarrier] = useState('UPS');
+  const [carrier, setCarrier] = useState<string>(DEFAULT_CARRIER);
   const [trackingNumber, setTrackingNumber] = useState('');
   const [shipDate, setShipDate] = useState(new Date().toISOString().slice(0, 10));
   const [eta, setEta] = useState('');
