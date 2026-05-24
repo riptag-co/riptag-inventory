@@ -86,6 +86,11 @@ export function OrdersTable({ orders }: { orders: OrderFull[] }) {
       }}
       onCreate={async () => { await createOrder({}); }}
       onDelete={deleteOrder}
+      rowClassName={(row) =>
+        row.paid
+          ? '[&>td]:!bg-ok/[0.025] [&>td:first-child]:border-l-2 [&>td:first-child]:border-l-ok/40'
+          : '[&>td]:!bg-warn/[0.04] [&>td:first-child]:border-l-2 [&>td:first-child]:border-l-warn/50'
+      }
       emptyMessage="No orders yet. Click 'Add row' to create your first PO."
     />
   );

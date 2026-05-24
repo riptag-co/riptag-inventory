@@ -24,6 +24,7 @@ export type SpreadsheetTableProps<T extends { id?: string }> = {
   newRowTemplate?: Partial<T>;
   readOnly?: boolean;
   emptyMessage?: string;
+  rowClassName?: (row: T) => string | undefined;
 };
 
 export function SpreadsheetTable<T extends { id?: string }>({
@@ -35,6 +36,7 @@ export function SpreadsheetTable<T extends { id?: string }>({
   newRowTemplate,
   readOnly,
   emptyMessage = 'No rows yet.',
+  rowClassName,
 }: SpreadsheetTableProps<T>) {
   const [editing, setEditing] = useState<{ id: string; key: string } | null>(null);
   const [pending, startTransition] = useTransition();
@@ -103,7 +105,7 @@ export function SpreadsheetTable<T extends { id?: string }>({
               </tr>
             ) : (
               rows.map((row) => (
-                <tr key={row.id} className="sheet-row group">
+                <tr key={row.id} className={cn('sheet-row group', rowClassName?.(row))}>
                   {columns.map((c) => {
                     const value = row[c.key as keyof T];
                     const isEditing = editing?.id === row.id && editing?.key === c.key;

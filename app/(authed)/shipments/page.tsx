@@ -32,6 +32,7 @@ export default async function ShipmentsPage() {
         orders={branching}
         existingShipments={allShipments}
         readOnly={user.role !== 'owner' && user.role !== 'supplier'}
+        isOwner={user.role === 'owner'}
       />
     </>
   );

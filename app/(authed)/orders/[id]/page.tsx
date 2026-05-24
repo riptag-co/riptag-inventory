@@ -1,28 +1,33 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { eq } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { db, orders, products } from '@/lib/db';
 import { getOrderItemsFull } from '@/lib/db/queries';
+import { requireUser } from '@/lib/auth';
 import { PageHeader, GlassCard, SectionTitle } from '@/components/ui';
 import { formatUsd, formatDate } from '@/lib/utils';
-import { OrderItemsTable } from './items-table';
+import { OrderItemsGrid } from './items-grid';
+import { OrderHeader } from './order-header';
 import { IconArrowLeft } from '@tabler/icons-react';
 
 export const dynamic = 'force-dynamic';
 
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const user = await requireUser();
 
   const orderRows = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
   if (!orderRows.length) notFound();
   const order = orderRows[0];
 
   const items = await getOrderItemsFull(id);
-  const allProducts = await db.select().from(products);
+  const allProducts = await db.select().from(products).orderBy(asc(products.sku));
 
   const subtotal = items.reduce((s, i) => s + i.lineTotal, 0);
   const shipping = Number(order.shippingCost);
   const total = subtotal + shipping;
+  const paid = order.paid;
+  const readOnly = user.role !== 'owner';
 
   return (
     <>
@@ -32,41 +37,42 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
       <PageHeader
         title={order.id}
-        subtitle={`Ordered ${formatDate(order.orderDate)} · ${items.length} line items`}
+        subtitle={`Ordered ${formatDate(order.orderDate)} · ${items.length} ${items.length === 1 ? 'item' : 'items'}`}
       />
 
-      <div className="grid grid-cols-4 gap-3 mb-8">
-        <GlassCard className="p-4">
-          <div className="text-[10px] uppercase tracking-wider text-text-tertiary">Goods</div>
-          <div className="num-display text-[22px] font-semibold mt-1.5">{formatUsd(subtotal)}</div>
-        </GlassCard>
-        <GlassCard className="p-4">
-          <div className="text-[10px] uppercase tracking-wider text-text-tertiary">Shipping</div>
-          <div className="num-display text-[22px] font-semibold mt-1.5">{formatUsd(shipping)}</div>
-        </GlassCard>
-        <GlassCard className="p-4">
-          <div className="text-[10px] uppercase tracking-wider text-text-tertiary">Total</div>
-          <div className="num-display text-[22px] font-semibold mt-1.5 text-accent">{formatUsd(total)}</div>
-        </GlassCard>
-        <GlassCard className="p-4">
-          <div className="text-[10px] uppercase tracking-wider text-text-tertiary">Paid</div>
-          <div className={`num-display text-[22px] font-semibold mt-1.5 ${order.paid ? 'text-ok' : 'text-bad'}`}>
-            {order.paid ? 'Yes' : 'No'}
-          </div>
-          {order.paymentDate && <div className="text-[10px] text-text-tertiary mt-1">{formatDate(order.paymentDate)}</div>}
-        </GlassCard>
+      <OrderHeader
+        orderId={order.id}
+        paid={paid}
+        paymentDate={order.paymentDate}
+        shippingCost={shipping}
+        subtotal={subtotal}
+        total={total}
+        notes={order.notes}
+        readOnly={readOnly}
+      />
+
+      <div className="mt-8">
+        <SectionTitle hint={`${items.length} ${items.length === 1 ? 'product' : 'products'}`}>
+          What you want
+        </SectionTitle>
+        <OrderItemsGrid
+          orderId={id}
+          items={items}
+          catalog={allProducts.map((p) => ({
+            sku: p.sku,
+            name: p.name,
+            imageUrl: p.imageUrl,
+            unitCost: String(p.unitCost ?? '0'),
+          }))}
+          readOnly={readOnly}
+        />
       </div>
 
-      <SectionTitle hint={`${items.length} lines`}>Line items</SectionTitle>
-      <OrderItemsTable
-        orderId={id}
-        items={items}
-        products={allProducts.map((p) => ({ value: p.sku, label: `${p.sku} — ${p.name}` }))}
-      />
-
-      <p className="text-[11px] text-text-tertiary mt-6">
-        Shipping progress lives on the <Link href="/shipments" className="text-text-secondary hover:text-accent">Shipments</Link> tab.
-      </p>
+      {paid && (
+        <p className="text-[11px] text-text-tertiary mt-6">
+          Shipping progress lives on the <Link href="/shipments" className="text-text-secondary hover:text-accent">Shipments</Link> tab.
+        </p>
+      )}
     </>
   );
 }
