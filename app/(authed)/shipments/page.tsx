@@ -1,27 +1,37 @@
-import { getAllShipments } from '@/lib/db/queries';
-import { db, products, orders } from '@/lib/db';
+import { desc } from 'drizzle-orm';
+import { db, shipments } from '@/lib/db';
+import { getOrderBranching } from '@/lib/db/queries';
+import { requireUser } from '@/lib/auth';
 import { PageHeader } from '@/components/ui';
-import { ShipmentsTable } from './table';
+import { ShipmentsTree } from './tree';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ShipmentsPage() {
-  const [ships, productsList, ordersList] = await Promise.all([
-    getAllShipments(),
-    db.select().from(products),
-    db.select().from(orders),
+  const user = await requireUser();
+  const [branching, allShipments] = await Promise.all([
+    getOrderBranching(),
+    db
+      .select({
+        id: shipments.id,
+        carrier: shipments.carrier,
+        trackingNumber: shipments.trackingNumber,
+        status: shipments.status,
+      })
+      .from(shipments)
+      .orderBy(desc(shipments.shipDate)),
   ]);
 
   return (
     <>
       <PageHeader
         title="Shipments"
-        subtitle="Every physical box. Tracking number, carrier, and what's inside."
+        subtitle="What's in the box and where it's going. Tap an item to allocate units to a new or existing shipment."
       />
-      <ShipmentsTable
-        shipments={ships}
-        productOptions={productsList.map((p) => ({ value: p.sku, label: `${p.sku} — ${p.name}` }))}
-        orderOptions={ordersList.map((o) => ({ value: o.id, label: o.id }))}
+      <ShipmentsTree
+        orders={branching}
+        existingShipments={allShipments}
+        readOnly={user.role !== 'owner' && user.role !== 'supplier'}
       />
     </>
   );

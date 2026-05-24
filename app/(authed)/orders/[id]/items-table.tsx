@@ -1,7 +1,6 @@
 'use client';
 
 import { SpreadsheetTable, ColumnDef } from '@/components/spreadsheet-table';
-import { StatusPill } from '@/components/ui';
 import { formatUsd, formatNum } from '@/lib/utils';
 import { updateOrderItem, createOrderItem, deleteOrderItem } from '@/app/actions';
 import { OrderItemFull } from '@/lib/db/queries';
@@ -19,20 +18,20 @@ export function OrderItemsTable({
     {
       key: 'sku',
       header: 'SKU',
-      width: '230px',
+      width: '260px',
       type: 'select',
       options: products,
       render: (row) => (
         <div className="flex items-center gap-2">
-          <span className="font-mono font-medium text-text-primary text-[12px]">{row.sku}</span>
-          <span className="text-text-tertiary truncate text-[12px]">{row.productName}</span>
+          <span className="font-mono font-medium text-accent text-[12px]">{row.sku}</span>
+          <span className="text-text-secondary truncate text-[12px]">{row.productName}</span>
         </div>
       ),
     },
     {
       key: 'qtyOrdered',
-      header: 'Ordered',
-      width: '90px',
+      header: 'Quantity',
+      width: '110px',
       type: 'number',
       align: 'right',
       format: (v) => formatNum(Number(v)),
@@ -40,7 +39,7 @@ export function OrderItemsTable({
     {
       key: 'unitPrice',
       header: 'Unit $',
-      width: '90px',
+      width: '110px',
       type: 'currency',
       align: 'right',
       format: (v) => formatUsd(Number(v)),
@@ -48,37 +47,10 @@ export function OrderItemsTable({
     {
       key: 'lineTotal',
       header: 'Line $',
-      width: '110px',
+      width: '130px',
       type: 'readonly',
       align: 'right',
       format: (v) => formatUsd(Number(v)),
-    },
-    {
-      key: 'qtyShipped',
-      header: 'Shipped',
-      width: '90px',
-      type: 'readonly',
-      align: 'right',
-      format: (v) => formatNum(Number(v)),
-    },
-    {
-      key: 'qtyRemaining',
-      header: 'Owed',
-      width: '90px',
-      type: 'readonly',
-      align: 'right',
-      render: (row) => (
-        <span className={`num-display font-medium ${row.qtyRemaining > 0 ? 'text-bad' : 'text-ok'}`}>
-          {formatNum(row.qtyRemaining)}
-        </span>
-      ),
-    },
-    {
-      key: 'fulfillmentStatus',
-      header: 'Status',
-      width: '120px',
-      type: 'readonly',
-      render: (row) => <StatusPill status={row.fulfillmentStatus} />,
     },
     { key: 'notes', header: 'Notes', type: 'text' },
   ];

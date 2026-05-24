@@ -2,13 +2,10 @@
 
 import Link from 'next/link';
 import { SpreadsheetTable, ColumnDef } from '@/components/spreadsheet-table';
-import { StatusPill } from '@/components/ui';
-import { formatUsd, formatDate, ORDER_STATUS_LABELS } from '@/lib/utils';
+import { formatUsd, formatDate } from '@/lib/utils';
 import { updateOrder, createOrder, deleteOrder } from '@/app/actions';
 import { OrderFull } from '@/lib/db/queries';
 import { IconExternalLink } from '@tabler/icons-react';
-
-const ORDER_STATUS_OPTIONS = Object.entries(ORDER_STATUS_LABELS).map(([value, label]) => ({ value, label }));
 
 export function OrdersTable({ orders }: { orders: OrderFull[] }) {
   const columns: ColumnDef<OrderFull>[] = [
@@ -29,23 +26,15 @@ export function OrdersTable({ orders }: { orders: OrderFull[] }) {
     },
     { key: 'orderDate', header: 'Date', width: '120px', type: 'date', format: formatDate },
     {
-      key: 'status',
-      header: 'Status',
-      width: '150px',
-      type: 'select',
-      options: ORDER_STATUS_OPTIONS,
-      render: (row) => <StatusPill status={row.status} label={ORDER_STATUS_LABELS[row.status]} />,
-    },
-    {
       key: 'lineCount',
-      header: 'Lines',
-      width: '60px',
+      header: 'Items',
+      width: '70px',
       type: 'readonly',
       align: 'right',
     },
     {
       key: 'subtotal',
-      header: 'Subtotal',
+      header: 'Goods',
       width: '110px',
       type: 'readonly',
       align: 'right',
@@ -54,7 +43,7 @@ export function OrdersTable({ orders }: { orders: OrderFull[] }) {
     {
       key: 'shippingCost',
       header: 'Shipping',
-      width: '100px',
+      width: '110px',
       type: 'currency',
       align: 'right',
       format: (v) => formatUsd(Number(v)),
@@ -70,7 +59,7 @@ export function OrdersTable({ orders }: { orders: OrderFull[] }) {
     {
       key: 'paid',
       header: 'Paid',
-      width: '70px',
+      width: '80px',
       type: 'select',
       options: [
         { value: 'true', label: 'Yes' },
@@ -78,10 +67,12 @@ export function OrdersTable({ orders }: { orders: OrderFull[] }) {
       ],
       align: 'center',
       render: (row) => (
-        <span className={row.paid ? 'text-ok' : 'text-bad'}>{row.paid ? '✓' : '—'}</span>
+        <span className={row.paid ? 'text-ok font-medium' : 'text-bad font-medium'}>
+          {row.paid ? '✓ Paid' : '— Unpaid'}
+        </span>
       ),
     },
-    { key: 'paymentDate', header: 'Paid date', width: '120px', type: 'date', format: formatDate },
+    { key: 'paymentDate', header: 'Paid on', width: '120px', type: 'date', format: formatDate },
     { key: 'notes', header: 'Notes', type: 'text' },
   ];
 

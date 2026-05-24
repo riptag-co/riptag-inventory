@@ -136,6 +136,50 @@ export async function deleteOrderItem(id: string) {
   revalidatePath('/dashboard');
 }
 
+export type ShipSomeTarget =
+  | { type: 'existing'; shipmentId: string }
+  | { type: 'new'; carrier?: string; trackingNumber?: string; shipDate?: string; eta?: string };
+
+export async function shipSome(orderItemId: string, qty: number, target: ShipSomeTarget) {
+  await requireUser();
+  const safeQty = coerceInt(qty);
+  if (safeQty <= 0) throw new Error('Quantity must be greater than zero');
+
+  const [item] = await db
+    .select({ id: orderItems.id, orderId: orderItems.orderId, sku: orderItems.sku })
+    .from(orderItems)
+    .where(eq(orderItems.id, orderItemId))
+    .limit(1);
+  if (!item) throw new Error('Order item not found');
+
+  let shipmentId: string;
+  if (target.type === 'existing') {
+    shipmentId = target.shipmentId;
+  } else {
+    shipmentId = await nextId('shipments', 'SH');
+    await db.insert(shipments).values({
+      id: shipmentId,
+      carrier: target.carrier || null,
+      trackingNumber: target.trackingNumber || null,
+      shipDate: target.shipDate || null,
+      eta: target.eta || null,
+      status: 'preparing',
+    });
+  }
+
+  await db.insert(shipmentItems).values({
+    shipmentId,
+    orderId: item.orderId,
+    sku: item.sku,
+    qty: safeQty,
+  });
+
+  revalidatePath('/shipments');
+  revalidatePath('/orders');
+  revalidatePath('/dashboard');
+  return { shipmentId };
+}
+
 export async function updateShipment(id: string, field: string, value: any) {
   await requireUser();
   const patch: any = { updatedAt: new Date() };
