@@ -236,7 +236,35 @@ export async function updateShipment(id: string, field: string, value: any) {
   if (field === 'boxWeightKg') patch[field] = String(coerceNumber(value));
   else if (field === 'shipDate' || field === 'eta' || field === 'actualDelivery') patch[field] = value === '' ? null : value;
   else patch[field] = value === '' ? null : value;
+
+  // Auto-bump: when a tracking number is added while still "preparing", move to "shipped".
+  if (field === 'trackingNumber' && value && String(value).trim().length > 0) {
+    const [cur] = await db.select({ status: shipments.status }).from(shipments).where(eq(shipments.id, id)).limit(1);
+    if (cur?.status === 'preparing') {
+      patch.status = 'shipped';
+      if (!patch.shipDate) patch.shipDate = new Date().toISOString().slice(0, 10);
+    }
+  }
+
+  // When user manually sets status to delivered, auto-stamp actual delivery if empty.
+  if (field === 'status' && value === 'delivered') {
+    const [cur] = await db.select({ actualDelivery: shipments.actualDelivery }).from(shipments).where(eq(shipments.id, id)).limit(1);
+    if (!cur?.actualDelivery) {
+      patch.actualDelivery = new Date().toISOString().slice(0, 10);
+    }
+  }
+
   await db.update(shipments).set(patch).where(eq(shipments.id, id));
+  revalidatePath('/shipments');
+  revalidatePath('/dashboard');
+}
+
+export async function moveShipmentItem(shipmentItemId: string, newShipmentId: string) {
+  await requireUser();
+  // Verify target shipment exists
+  const [target] = await db.select({ id: shipments.id }).from(shipments).where(eq(shipments.id, newShipmentId)).limit(1);
+  if (!target) throw new Error('Target shipment not found');
+  await db.update(shipmentItems).set({ shipmentId: newShipmentId }).where(eq(shipmentItems.id, shipmentItemId));
   revalidatePath('/shipments');
   revalidatePath('/dashboard');
 }

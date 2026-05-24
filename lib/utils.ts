@@ -50,13 +50,25 @@ export const ORDER_STATUS_LABELS: Record<string, string> = {
 export const SHIPMENT_STATUS_LABELS: Record<string, string> = {
   preparing: 'Preparing',
   shipped: 'Shipped',
-  in_transit: 'In transit',
-  out_for_delivery: 'Out for delivery',
+  in_transit: 'Shipped',
+  out_for_delivery: 'Shipped',
   delivered: 'Delivered',
-  received: 'Received',
-  delayed: 'Delayed',
-  lost: 'Lost',
+  received: 'Delivered',
+  delayed: 'Shipped',
+  lost: 'Shipped',
 };
+
+/** The only 3 statuses we surface in dropdowns. Legacy DB values normalize to these. */
+export const SHIPMENT_STATUS_CHOICES = ['preparing', 'shipped', 'delivered'] as const;
+export type ShipmentStatusChoice = (typeof SHIPMENT_STATUS_CHOICES)[number];
+
+/** Normalize any legacy DB status into one of the 3 canonical values for display. */
+export function normalizeShipmentStatus(status: string): ShipmentStatusChoice {
+  if (status === 'preparing') return 'preparing';
+  if (status === 'delivered' || status === 'received') return 'delivered';
+  // shipped, in_transit, out_for_delivery, delayed, lost → shipped
+  return 'shipped';
+}
 
 export function statusVariant(status: string): 'ok' | 'warn' | 'bad' | 'info' | 'neutral' {
   // green / done
@@ -72,26 +84,27 @@ export function statusVariant(status: string): 'ok' | 'warn' | 'bad' | 'info' | 
   return 'neutral';
 }
 
-export type ShipmentStageStatus = 'not_started' | 'preparing' | 'in_transit' | 'all_delivered';
+export type ShipmentStageStatus = 'not_started' | 'preparing' | 'shipped' | 'all_delivered';
 
 /**
  * Roll up many shipment statuses into a single stage for an order or item.
- * Worst-cased: preparing beats in_transit, in_transit beats all_delivered.
+ * Normalizes legacy values first, then picks the worst stage (preparing > shipped > all_delivered).
  */
 export function rollupShipmentStage(statuses: string[]): ShipmentStageStatus {
   if (statuses.length === 0) return 'not_started';
-  const hasPreparing = statuses.some((s) => s === 'preparing');
-  const hasMoving = statuses.some((s) => ['shipped', 'in_transit', 'out_for_delivery', 'delayed'].includes(s));
-  const allDone = statuses.every((s) => ['delivered', 'received'].includes(s));
+  const normalized = statuses.map(normalizeShipmentStatus);
+  const hasPreparing = normalized.some((s) => s === 'preparing');
+  const hasShipped = normalized.some((s) => s === 'shipped');
+  const allDone = normalized.every((s) => s === 'delivered');
   if (allDone) return 'all_delivered';
   if (hasPreparing) return 'preparing';
-  if (hasMoving) return 'in_transit';
+  if (hasShipped) return 'shipped';
   return 'preparing';
 }
 
 export const STAGE_LABELS: Record<ShipmentStageStatus, string> = {
   not_started: 'Not started',
   preparing: 'Preparing',
-  in_transit: 'In transit',
+  shipped: 'Shipped',
   all_delivered: 'All delivered',
 };

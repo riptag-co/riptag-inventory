@@ -48,8 +48,6 @@ export function OrderHeader({
   const [pending, startTransition] = useTransition();
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState(notes ?? '');
-  const [editingShipping, setEditingShipping] = useState(false);
-  const [shipValue, setShipValue] = useState(String(shippingCost));
   const [error, setError] = useState<string | null>(null);
 
   const isDraft = status === 'draft';
@@ -88,14 +86,6 @@ export function OrderHeader({
     setEditingNotes(false);
     if (notesValue === (notes ?? '')) return;
     await updateOrder(orderId, 'notes', notesValue);
-    router.refresh();
-  };
-
-  const saveShipping = async () => {
-    setEditingShipping(false);
-    const n = parseFloat(shipValue);
-    if (isNaN(n) || n === shippingCost) return;
-    await updateOrder(orderId, 'shippingCost', n);
     router.refresh();
   };
 
@@ -200,40 +190,8 @@ export function OrderHeader({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
         <GlassCard className="p-4">
-          <div className="flex items-baseline justify-between">
-            <div className="text-[10px] uppercase tracking-wider text-text-tertiary">Total</div>
-            {!isDraft && (
-              <span className="text-[10px] text-text-tertiary">
-                {formatUsd(subtotal)} goods
-                {shippingCost > 0 && ` + ${formatUsd(shippingCost)} shipping`}
-              </span>
-            )}
-          </div>
-          <div className="num-display text-[28px] font-semibold mt-1.5 text-accent">{formatUsd(total)}</div>
-          {!readOnly && !isDraft && (
-            <div className="flex items-baseline gap-2 mt-2">
-              <span className="text-[10px] text-text-tertiary uppercase tracking-wider">Shipping</span>
-              {editingShipping ? (
-                <input
-                  autoFocus
-                  type="number"
-                  step="0.01"
-                  value={shipValue}
-                  onChange={(e) => setShipValue(e.target.value)}
-                  onBlur={saveShipping}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                  className="sheet-input num-display text-[12px] w-24"
-                />
-              ) : (
-                <button
-                  onClick={() => setEditingShipping(true)}
-                  className="text-[12px] num-display text-text-secondary hover:bg-white/[0.04] px-1.5 -mx-1.5 rounded cursor-text"
-                >
-                  {formatUsd(shippingCost)}
-                </button>
-              )}
-            </div>
-          )}
+          <div className="text-[10px] uppercase tracking-wider text-text-tertiary">Total</div>
+          <div className="num-display text-[32px] font-semibold mt-1.5 text-accent leading-none">{formatUsd(total)}</div>
         </GlassCard>
 
         <GlassCard className="p-4">
