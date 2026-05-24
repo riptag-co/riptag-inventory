@@ -377,31 +377,109 @@ function AllocationView({
   readOnly: boolean;
   onEdit: () => void;
 }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [qtyEditing, setQtyEditing] = useState(false);
+  const [qty, setQty] = useState(String(shipment.qty));
+  const [trackingEditing, setTrackingEditing] = useState(false);
+  const [tracking, setTracking] = useState(shipment.trackingNumber ?? '');
   const normalizedStatus = normalizeShipmentStatus(shipment.status);
-  const cls = variantClasses(statusVariant(normalizedStatus));
+
+  const saveQty = () => {
+    setQtyEditing(false);
+    const n = parseInt(qty, 10);
+    if (isNaN(n) || n === shipment.qty) return;
+    startTransition(async () => {
+      await updateShipmentItem(shipment.shipmentItemId, 'qty', n);
+      router.refresh();
+    });
+  };
+
+  const saveTracking = () => {
+    setTrackingEditing(false);
+    if (tracking === (shipment.trackingNumber ?? '')) return;
+    startTransition(async () => {
+      await updateShipment(shipment.shipmentId, 'trackingNumber', tracking);
+      router.refresh();
+    });
+  };
+
+  const updateStatus = (newStatus: string) => {
+    startTransition(async () => {
+      await updateShipment(shipment.shipmentId, 'status', newStatus);
+      router.refresh();
+    });
+  };
 
   return (
-    <div className="flex items-center gap-3 flex-wrap">
+    <div className="flex items-center gap-2.5 flex-wrap">
       <span className="text-[11px] font-mono text-text-primary font-medium">{shipment.shipmentId}</span>
 
-      <span className="text-[12px] num-display font-medium text-text-primary">
-        {formatNum(shipment.qty)} units
-      </span>
+      {qtyEditing && !readOnly ? (
+        <input
+          autoFocus
+          type="number"
+          value={qty}
+          onChange={(e) => setQty(e.target.value)}
+          onBlur={saveQty}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            if (e.key === 'Escape') {
+              setQty(String(shipment.qty));
+              setQtyEditing(false);
+            }
+          }}
+          className="sheet-input w-16 text-[12px] num-display font-medium"
+        />
+      ) : (
+        <button
+          disabled={readOnly}
+          onClick={() => !readOnly && setQtyEditing(true)}
+          className={cn(
+            'text-[12px] num-display font-medium text-text-primary px-1.5 py-0.5 -mx-1.5 rounded',
+            !readOnly && 'hover:bg-white/[0.04] cursor-text'
+          )}
+        >
+          {formatNum(shipment.qty)} units
+        </button>
+      )}
 
       <span className="text-text-tertiary text-[11px]">·</span>
 
-      <span className="text-[11px] text-text-secondary">
-        {shipment.carrier ?? <span className="italic text-text-tertiary">no carrier</span>}
-      </span>
+      <InlineStatusSelect
+        value={normalizedStatus}
+        onChange={updateStatus}
+        disabled={readOnly || pending}
+      />
 
-      <TrackingLink carrier={shipment.carrier} trackingNumber={shipment.trackingNumber} className="truncate max-w-[200px]" />
-
-      <span
-        className={cn('inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border', cls.text, cls.bg, cls.border)}
-      >
-        <span className={cn('w-1.5 h-1.5 rounded-full', cls.dot)} />
-        {normalizedStatus === 'preparing' ? 'Preparing' : normalizedStatus === 'shipped' ? 'Shipped' : 'Delivered'}
-      </span>
+      {trackingEditing && !readOnly ? (
+        <input
+          autoFocus
+          value={tracking}
+          onChange={(e) => setTracking(e.target.value)}
+          onBlur={saveTracking}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            if (e.key === 'Escape') {
+              setTracking(shipment.trackingNumber ?? '');
+              setTrackingEditing(false);
+            }
+          }}
+          placeholder="tracking #"
+          className="sheet-input font-mono text-[11px] w-48"
+        />
+      ) : shipment.trackingNumber ? (
+        <TrackingLink carrier={shipment.carrier} trackingNumber={shipment.trackingNumber} className="truncate max-w-[200px]" />
+      ) : !readOnly ? (
+        <button
+          onClick={() => setTrackingEditing(true)}
+          className="text-[11px] text-text-tertiary italic hover:text-text-secondary px-1.5 py-0.5 -mx-1.5 rounded hover:bg-white/[0.04] cursor-text"
+        >
+          + add tracking
+        </button>
+      ) : (
+        <span className="text-[11px] italic text-text-tertiary">no tracking</span>
+      )}
 
       {shipment.eta && normalizedStatus !== 'delivered' && (
         <span className="text-[10px] text-text-tertiary inline-flex items-center gap-1">
@@ -419,13 +497,50 @@ function AllocationView({
         <button
           onClick={onEdit}
           className="ml-auto flex items-center gap-1 text-[10px] text-text-tertiary hover:text-text-primary px-1.5 py-0.5 rounded hover:bg-white/[0.04]"
-          title="Edit this allocation"
+          title="Edit ETA, move to another box, or add notes"
         >
           <IconEdit size={11} />
-          Edit
+          More
         </button>
       )}
     </div>
+  );
+}
+
+function InlineStatusSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const cls = variantClasses(statusVariant(value));
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+      className={cn(
+        'inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium border cursor-pointer transition appearance-none pr-6 bg-no-repeat',
+        cls.text,
+        cls.bg,
+        cls.border
+      )}
+      style={{
+        backgroundImage:
+          'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'10\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2.5\'%3e%3cpolyline points=\'6 9 12 15 18 9\'/%3e%3c/svg%3e")',
+        backgroundPosition: 'right 6px center',
+        backgroundSize: '10px',
+      }}
+    >
+      {STATUS_OPTIONS.map((o) => (
+        <option key={o.value} value={o.value} className="bg-bg-base text-text-primary">
+          {o.label}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -442,14 +557,8 @@ function AllocationEditor({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const [qty, setQty] = useState(String(shipment.qty));
   const [shipmentId, setShipmentId] = useState(shipment.shipmentId);
-  const [carrier, setCarrier] = useState(shipment.carrier ?? DEFAULT_CARRIER);
-  const [tracking, setTracking] = useState(shipment.trackingNumber ?? '');
-  const [status, setStatus] = useState<string>(normalizeShipmentStatus(shipment.status));
-  const [shipDate, setShipDate] = useState(shipment.shipDate ?? '');
   const [eta, setEta] = useState(shipment.eta ?? '');
-  const [delivered, setDelivered] = useState(shipment.actualDelivery ?? '');
   const [notes, setNotes] = useState(shipment.notes ?? '');
   const [creatingNewBox, setCreatingNewBox] = useState(false);
 
@@ -477,51 +586,22 @@ function AllocationEditor({
 
   const save = () => {
     setError(null);
-    const newQty = parseInt(qty, 10);
-    if (isNaN(newQty) || newQty <= 0) {
-      setError('Quantity must be a positive number');
-      return;
-    }
 
     startTransition(async () => {
       try {
-        // Move first (changes which box we then edit shipment-level fields on)
         if (shipmentId !== shipment.shipmentId) {
           await moveShipmentItem(shipment.shipmentItemId, shipmentId);
         }
 
-        // Qty (allocation-level)
-        if (newQty !== shipment.qty) {
-          await updateShipmentItem(shipment.shipmentItemId, 'qty', newQty);
-        }
-
-        // Apply shipment-level changes to the (possibly new) target shipment
         const ops: Promise<any>[] = [];
-        if (carrier !== (shipment.carrier ?? '') && carrier) {
-          ops.push(updateShipment(shipmentId, 'carrier', carrier));
-        }
-        if (tracking !== (shipment.trackingNumber ?? '')) {
-          ops.push(updateShipment(shipmentId, 'trackingNumber', tracking));
-        }
-        // Push status LAST so server-side auto-bump on tracking doesn't get overridden
-        const currentNormalized = normalizeShipmentStatus(shipment.status);
-        if (status !== currentNormalized) {
-          ops.push(updateShipment(shipmentId, 'status', status));
-        }
-        if (shipDate !== (shipment.shipDate ?? '')) {
-          ops.push(updateShipment(shipmentId, 'shipDate', shipDate));
-        }
         if (eta !== (shipment.eta ?? '')) {
           ops.push(updateShipment(shipmentId, 'eta', eta));
-        }
-        if (delivered !== (shipment.actualDelivery ?? '')) {
-          ops.push(updateShipment(shipmentId, 'actualDelivery', delivered));
         }
         if (notes !== (shipment.notes ?? '')) {
           ops.push(updateShipment(shipmentId, 'notes', notes));
         }
-
         await Promise.all(ops);
+
         onClose();
         router.refresh();
       } catch (e: any) {
@@ -536,7 +616,7 @@ function AllocationEditor({
     <div className="mt-1 rounded-lg bg-white/[0.025] border border-accent/30 p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="text-[11px] uppercase tracking-wider font-medium text-accent inline-flex items-center gap-1.5">
-          <IconEdit size={11} /> Editing allocation
+          <IconEdit size={11} /> More details
         </div>
         <button
           onClick={onClose}
@@ -547,17 +627,8 @@ function AllocationEditor({
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-        <Field label="Units">
-          <input
-            type="number"
-            min={1}
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            className="sheet-input num-display text-[13px] font-medium"
-          />
-        </Field>
-        <Field label="Shipment box" hint={boxChanged ? '⚠️ moving to a different box' : undefined}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+        <Field label="Move to box" hint={boxChanged ? '⚠️ moving' : undefined}>
           <select
             value={shipmentId}
             onChange={(e) => handleBoxSelect(e.target.value)}
@@ -569,98 +640,38 @@ function AllocationEditor({
             {existingShipments.map((s) => (
               <option key={s.id} value={s.id} className="bg-bg-base">
                 {s.id}
-                {s.carrier ? ` — ${s.carrier}` : ''}
                 {s.trackingNumber ? ` · ${s.trackingNumber.slice(-8)}` : ''}
               </option>
             ))}
             <option value="__NEW__" className="bg-bg-base text-accent">+ Create a new box…</option>
           </select>
         </Field>
+
+        <Field label="ETA (rough estimate)">
+          <input
+            type="date"
+            value={eta}
+            onChange={(e) => setEta(e.target.value)}
+            className="sheet-input text-[12px]"
+          />
+        </Field>
+
+        <div className="sm:col-span-2">
+          <Field label="Notes (shared with all items in this box)">
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              className="sheet-input text-[12px] resize-none"
+              placeholder="Anything to remember about this box…"
+            />
+          </Field>
+        </div>
       </div>
 
       {creatingNewBox && (
         <InlineNewBox onCreated={handleNewBoxCreated} onCancel={() => setCreatingNewBox(false)} />
       )}
-
-      <div className="border-t border-white/[0.06] pt-3 mb-3">
-        <div className="text-[10px] uppercase tracking-wider text-text-tertiary mb-2 inline-flex items-center gap-1.5">
-          <IconArrowsExchange size={10} /> Box details (shared with all items in {shipmentId})
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Carrier">
-            <select
-              value={carrier}
-              onChange={(e) => setCarrier(e.target.value)}
-              className="sheet-input text-[12px]"
-            >
-              {CARRIER_OPTIONS.map((c) => (
-                <option key={c} value={c} className="bg-bg-base">{c}</option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Tracking #" hint={tracking && status === 'preparing' ? 'will auto-mark as shipped' : undefined}>
-            <input
-              value={tracking}
-              onChange={(e) => setTracking(e.target.value)}
-              placeholder="paste tracking…"
-              className="sheet-input font-mono text-[12px]"
-            />
-          </Field>
-
-          <Field label="Status">
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="sheet-input text-[12px]"
-            >
-              {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value} className="bg-bg-base">{o.label}</option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Shipped date">
-            <input
-              type="date"
-              value={shipDate}
-              onChange={(e) => setShipDate(e.target.value)}
-              className="sheet-input text-[12px]"
-            />
-          </Field>
-
-          <Field label="ETA">
-            <input
-              type="date"
-              value={eta}
-              onChange={(e) => setEta(e.target.value)}
-              className="sheet-input text-[12px]"
-            />
-          </Field>
-
-          <Field label="Delivered on">
-            <input
-              type="date"
-              value={delivered}
-              onChange={(e) => setDelivered(e.target.value)}
-              className="sheet-input text-[12px]"
-            />
-          </Field>
-
-          <div className="sm:col-span-2">
-            <Field label="Notes">
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={2}
-                className="sheet-input text-[12px] resize-none"
-                placeholder="Anything about this box…"
-              />
-            </Field>
-          </div>
-        </div>
-      </div>
 
       {error && (
         <div className="text-[11px] text-bad mb-3">{error}</div>
@@ -672,7 +683,7 @@ function AllocationEditor({
           disabled={pending}
           className="text-[12px] text-text-tertiary hover:text-bad inline-flex items-center gap-1.5 px-2 py-1 rounded"
         >
-          <IconX size={12} /> Remove allocation
+          <IconX size={12} /> Remove this allocation
         </button>
         <div className="flex items-center gap-2">
           <button
@@ -688,7 +699,7 @@ function AllocationEditor({
             className="px-3 py-1.5 text-[12px] font-medium bg-accent/90 hover:bg-accent text-white rounded-md disabled:opacity-50 inline-flex items-center gap-1.5"
           >
             {pending ? <IconLoader2 size={13} className="animate-spin" /> : <IconCheck size={13} />}
-            Save changes
+            Save
           </button>
         </div>
       </div>
@@ -719,7 +730,6 @@ function InlineNewBox({
   const [pending, startTransition] = useTransition();
   const [carrier, setCarrier] = useState<string>(DEFAULT_CARRIER);
   const [tracking, setTracking] = useState('');
-  const [shipDate, setShipDate] = useState('');
   const [eta, setEta] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -730,7 +740,6 @@ function InlineNewBox({
         const newId = await createEmptyShipment({
           carrier,
           trackingNumber: tracking || undefined,
-          shipDate: shipDate || undefined,
           eta: eta || undefined,
         });
         router.refresh();
@@ -746,7 +755,7 @@ function InlineNewBox({
       <div className="text-[10px] uppercase tracking-wider text-accent mb-2 font-medium inline-flex items-center gap-1.5">
         <IconPackage size={11} /> New box
       </div>
-      <div className="grid grid-cols-2 gap-2 mb-2">
+      <div className="grid grid-cols-3 gap-2 mb-2">
         <Field label="Carrier">
           <select value={carrier} onChange={(e) => setCarrier(e.target.value)} className="sheet-input text-[12px]">
             {CARRIER_OPTIONS.map((c) => (
@@ -761,9 +770,6 @@ function InlineNewBox({
             placeholder="optional"
             className="sheet-input font-mono text-[12px]"
           />
-        </Field>
-        <Field label="Shipped">
-          <input type="date" value={shipDate} onChange={(e) => setShipDate(e.target.value)} className="sheet-input text-[12px]" />
         </Field>
         <Field label="ETA">
           <input type="date" value={eta} onChange={(e) => setEta(e.target.value)} className="sheet-input text-[12px]" />
@@ -804,7 +810,6 @@ function ShipSomeForm({
   const [shipmentId, setShipmentId] = useState(existingShipments[0]?.id ?? '');
   const [carrier, setCarrier] = useState<string>(DEFAULT_CARRIER);
   const [trackingNumber, setTrackingNumber] = useState('');
-  const [shipDate, setShipDate] = useState(new Date().toISOString().slice(0, 10));
   const [eta, setEta] = useState('');
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -829,7 +834,6 @@ function ShipSomeForm({
             type: 'new',
             carrier: carrier || undefined,
             trackingNumber: trackingNumber || undefined,
-            shipDate: shipDate || undefined,
             eta: eta || undefined,
           });
         }
@@ -928,9 +932,6 @@ function ShipSomeForm({
                 placeholder="optional"
                 className="sheet-input font-mono text-[12px]"
               />
-
-              <label className="text-[11px] text-text-secondary">Shipped</label>
-              <input type="date" value={shipDate} onChange={(e) => setShipDate(e.target.value)} className="sheet-input text-[12px]" />
 
               <label className="text-[11px] text-text-secondary">ETA</label>
               <input type="date" value={eta} onChange={(e) => setEta(e.target.value)} className="sheet-input text-[12px]" />

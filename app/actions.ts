@@ -246,11 +246,27 @@ export async function updateShipment(id: string, field: string, value: any) {
     }
   }
 
+  // When user manually sets status to shipped, auto-stamp shipDate if empty.
+  if (field === 'status' && value === 'shipped') {
+    const [cur] = await db.select({ shipDate: shipments.shipDate }).from(shipments).where(eq(shipments.id, id)).limit(1);
+    if (!cur?.shipDate) {
+      patch.shipDate = new Date().toISOString().slice(0, 10);
+    }
+  }
+
   // When user manually sets status to delivered, auto-stamp actual delivery if empty.
   if (field === 'status' && value === 'delivered') {
-    const [cur] = await db.select({ actualDelivery: shipments.actualDelivery }).from(shipments).where(eq(shipments.id, id)).limit(1);
+    const [cur] = await db
+      .select({ actualDelivery: shipments.actualDelivery, shipDate: shipments.shipDate })
+      .from(shipments)
+      .where(eq(shipments.id, id))
+      .limit(1);
     if (!cur?.actualDelivery) {
       patch.actualDelivery = new Date().toISOString().slice(0, 10);
+    }
+    // If they jumped straight from preparing → delivered, also stamp a ship date so timeline isn't empty.
+    if (!cur?.shipDate) {
+      patch.shipDate = new Date().toISOString().slice(0, 10);
     }
   }
 

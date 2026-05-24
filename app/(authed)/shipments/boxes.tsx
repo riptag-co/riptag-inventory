@@ -69,6 +69,44 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+function InlineStatusSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const n = normalizeShipmentStatus(value);
+  const cls = variantClasses(statusVariant(n));
+  return (
+    <select
+      value={n}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+      className={cn(
+        'inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium border cursor-pointer transition appearance-none pr-6 bg-no-repeat',
+        cls.text,
+        cls.bg,
+        cls.border
+      )}
+      style={{
+        backgroundImage:
+          'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'10\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2.5\'%3e%3cpolyline points=\'6 9 12 15 18 9\'/%3e%3c/svg%3e")',
+        backgroundPosition: 'right 6px center',
+        backgroundSize: '10px',
+      }}
+    >
+      {STATUS_OPTIONS.map((o) => (
+        <option key={o.value} value={o.value} className="bg-bg-base text-text-primary">
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export function TrackingLink({
   carrier,
   trackingNumber,
@@ -211,13 +249,26 @@ function BoxCard({ box, readOnly }: { box: ShipmentBox; readOnly: boolean }) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <StatusPill status={box.status} />
+          {readOnly ? (
+            <StatusPill status={box.status} />
+          ) : (
+            <InlineStatusSelect
+              value={box.status}
+              onChange={(v) =>
+                startTransition(async () => {
+                  await updateShipment(box.id, 'status', v);
+                  router.refresh();
+                })
+              }
+              disabled={pending}
+            />
+          )}
           {!readOnly && (
             <>
               <button
                 onClick={() => setEditing(!editing)}
                 className="text-text-tertiary hover:text-text-primary p-1.5 rounded hover:bg-white/[0.04]"
-                title={editing ? 'Close editor' : 'Edit box'}
+                title={editing ? 'Close editor' : 'More details'}
               >
                 <IconEdit size={13} />
               </button>
@@ -364,12 +415,8 @@ function BoxContentRow({
 function BoxEditor({ box, onClose }: { box: ShipmentBox; onClose: () => void }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [carrier, setCarrier] = useState(box.carrier ?? DEFAULT_CARRIER);
   const [tracking, setTracking] = useState(box.trackingNumber ?? '');
-  const [status, setStatus] = useState<string>(normalizeShipmentStatus(box.status));
-  const [shipDate, setShipDate] = useState(box.shipDate ?? '');
   const [eta, setEta] = useState(box.eta ?? '');
-  const [delivered, setDelivered] = useState(box.actualDelivery ?? '');
   const [notes, setNotes] = useState(box.notes ?? '');
   const [error, setError] = useState<string | null>(null);
 
@@ -378,12 +425,8 @@ function BoxEditor({ box, onClose }: { box: ShipmentBox; onClose: () => void }) 
     startTransition(async () => {
       try {
         const ops: Promise<any>[] = [];
-        if (carrier !== (box.carrier ?? '')) ops.push(updateShipment(box.id, 'carrier', carrier));
         if (tracking !== (box.trackingNumber ?? '')) ops.push(updateShipment(box.id, 'trackingNumber', tracking));
-        if (status !== normalizeShipmentStatus(box.status)) ops.push(updateShipment(box.id, 'status', status));
-        if (shipDate !== (box.shipDate ?? '')) ops.push(updateShipment(box.id, 'shipDate', shipDate));
         if (eta !== (box.eta ?? '')) ops.push(updateShipment(box.id, 'eta', eta));
-        if (delivered !== (box.actualDelivery ?? '')) ops.push(updateShipment(box.id, 'actualDelivery', delivered));
         if (notes !== (box.notes ?? '')) ops.push(updateShipment(box.id, 'notes', notes));
         await Promise.all(ops);
         onClose();
@@ -397,20 +440,10 @@ function BoxEditor({ box, onClose }: { box: ShipmentBox; onClose: () => void }) 
   return (
     <div className="px-4 py-4 bg-white/[0.02] border-b border-white/[0.04]">
       <div className="text-[10px] uppercase tracking-wider text-accent mb-3 inline-flex items-center gap-1.5 font-medium">
-        <IconEdit size={11} /> Editing box {box.id}
+        <IconEdit size={11} /> More details for {box.id}
       </div>
       <div className="grid grid-cols-2 gap-3 mb-3">
-        <Field label="Carrier">
-          <select value={carrier} onChange={(e) => setCarrier(e.target.value)} className="sheet-input text-[12px]">
-            {CARRIERS.map((c) => (
-              <option key={c} value={c} className="bg-bg-base">{c}</option>
-            ))}
-            {box.carrier && !CARRIERS.includes(box.carrier as any) && (
-              <option value={box.carrier} className="bg-bg-base">{box.carrier} (legacy)</option>
-            )}
-          </select>
-        </Field>
-        <Field label="Tracking #" hint={tracking && status === 'preparing' ? 'will auto-mark as shipped' : undefined}>
+        <Field label="Tracking #" hint={tracking && box.status === 'preparing' ? 'will auto-mark as shipped' : undefined}>
           <input
             value={tracking}
             onChange={(e) => setTracking(e.target.value)}
@@ -418,21 +451,8 @@ function BoxEditor({ box, onClose }: { box: ShipmentBox; onClose: () => void }) 
             className="sheet-input font-mono text-[12px]"
           />
         </Field>
-        <Field label="Status">
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="sheet-input text-[12px]">
-            {STATUS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value} className="bg-bg-base">{o.label}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Shipped">
-          <input type="date" value={shipDate} onChange={(e) => setShipDate(e.target.value)} className="sheet-input text-[12px]" />
-        </Field>
-        <Field label="ETA">
+        <Field label="ETA (rough estimate)">
           <input type="date" value={eta} onChange={(e) => setEta(e.target.value)} className="sheet-input text-[12px]" />
-        </Field>
-        <Field label="Delivered">
-          <input type="date" value={delivered} onChange={(e) => setDelivered(e.target.value)} className="sheet-input text-[12px]" />
         </Field>
         <div className="col-span-2">
           <Field label="Notes">
@@ -469,7 +489,6 @@ function NewBoxForm({ onClose }: { onClose: () => void }) {
   const [pending, startTransition] = useTransition();
   const [carrier, setCarrier] = useState<string>(DEFAULT_CARRIER);
   const [tracking, setTracking] = useState('');
-  const [shipDate, setShipDate] = useState('');
   const [eta, setEta] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -481,7 +500,6 @@ function NewBoxForm({ onClose }: { onClose: () => void }) {
         await createEmptyShipment({
           carrier,
           trackingNumber: tracking || undefined,
-          shipDate: shipDate || undefined,
           eta: eta || undefined,
           notes: notes || undefined,
         });
@@ -519,23 +537,17 @@ function NewBoxForm({ onClose }: { onClose: () => void }) {
             className="sheet-input font-mono text-[12px]"
           />
         </Field>
-        <Field label="Shipped">
-          <input type="date" value={shipDate} onChange={(e) => setShipDate(e.target.value)} className="sheet-input text-[12px]" />
-        </Field>
-        <Field label="ETA">
+        <Field label="ETA (rough estimate)">
           <input type="date" value={eta} onChange={(e) => setEta(e.target.value)} className="sheet-input text-[12px]" />
         </Field>
-        <div className="col-span-2">
-          <Field label="Notes">
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={2}
-              placeholder="optional — what's special about this box"
-              className="sheet-input text-[12px] resize-none"
-            />
-          </Field>
-        </div>
+        <Field label="Notes">
+          <input
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="optional"
+            className="sheet-input text-[12px]"
+          />
+        </Field>
       </div>
       {error && <div className="text-[11px] text-bad mb-2">{error}</div>}
       <div className="flex items-center gap-2 justify-end">

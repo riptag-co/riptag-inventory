@@ -22,6 +22,18 @@ export function ShipmentsView({
 }) {
   const [view, setView] = useState<'tree' | 'boxes'>('tree');
 
+  // Supplier never sees the box-centric view — keep their workflow focused on order tree.
+  if (!isOwner) {
+    return (
+      <ShipmentsTree
+        orders={orders}
+        existingShipments={existingShipments}
+        readOnly={readOnly}
+        isOwner={isOwner}
+      />
+    );
+  }
+
   return (
     <div>
       <div className="flex items-center gap-1 mb-5 bg-white/[0.025] border border-white/[0.06] p-1 rounded-lg w-fit">
