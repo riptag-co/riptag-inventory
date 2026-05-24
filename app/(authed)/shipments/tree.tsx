@@ -85,69 +85,30 @@ export function ShipmentsTree({
   readOnly: boolean;
   isOwner: boolean;
 }) {
-  const [showUnpaid, setShowUnpaid] = useState(false);
-  const paid = orders.filter((o) => o.paid);
-  const unpaid = orders.filter((o) => !o.paid);
-
   if (orders.length === 0) {
-    return <div className="text-text-tertiary text-center py-12 text-sm">No orders yet.</div>;
+    return (
+      <div className="glass p-8 text-center">
+        <IconCash size={28} className="mx-auto text-text-tertiary mb-2" />
+        <div className="text-[14px] font-medium text-text-secondary">Nothing to ship yet</div>
+        <div className="text-[12px] text-text-tertiary mt-1">
+          {isOwner
+            ? 'Once you pay for an order on the Orders tab, it shows up here for shipping.'
+            : 'Waiting on a paid order to ship.'}
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      {paid.length === 0 && (
-        <div className="glass p-6 text-center">
-          <IconCash size={28} className="mx-auto text-text-tertiary mb-2" />
-          <div className="text-[14px] font-medium text-text-secondary">No paid orders yet</div>
-          <div className="text-[12px] text-text-tertiary mt-1">
-            {isOwner
-              ? 'Mark an order as paid to start tracking shipments here.'
-              : 'Waiting on payment confirmation.'}
-          </div>
-        </div>
-      )}
-
-      {paid.length > 0 && (
-        <div className="flex flex-col gap-4">
-          {paid.map((order) => (
-            <OrderBranchCard
-              key={order.orderId}
-              order={order}
-              existingShipments={existingShipments}
-              readOnly={readOnly}
-            />
-          ))}
-        </div>
-      )}
-
-      {isOwner && unpaid.length > 0 && (
-        <div>
-          <button
-            onClick={() => setShowUnpaid(!showUnpaid)}
-            className="w-full flex items-center justify-between px-4 py-3 text-[12px] text-text-tertiary hover:text-text-secondary border-t border-white/[0.06]"
-          >
-            <span className="inline-flex items-center gap-2">
-              {showUnpaid ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
-              <span className="uppercase tracking-wider font-medium">Awaiting payment ({unpaid.length})</span>
-            </span>
-            <span className="text-[11px] text-text-tertiary">
-              {showUnpaid ? 'Hide' : 'Show'} — supplier doesn't ship until paid
-            </span>
-          </button>
-          {showUnpaid && (
-            <div className="flex flex-col gap-4 mt-3 opacity-60">
-              {unpaid.map((order) => (
-                <OrderBranchCard
-                  key={order.orderId}
-                  order={order}
-                  existingShipments={existingShipments}
-                  readOnly
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+    <div className="flex flex-col gap-4">
+      {orders.map((order) => (
+        <OrderBranchCard
+          key={order.orderId}
+          order={order}
+          existingShipments={existingShipments}
+          readOnly={readOnly}
+        />
+      ))}
     </div>
   );
 }

@@ -4,14 +4,12 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  IconPlus,
   IconLoader2,
   IconX,
   IconTrash,
   IconEdit,
   IconCheck,
   IconBox,
-  IconTruck,
   IconExternalLink,
   IconCalendar,
   IconChevronDown,
@@ -25,13 +23,10 @@ import {
   formatNum,
   normalizeShipmentStatus,
   SHIPMENT_STATUS_CHOICES,
-  CARRIERS,
-  DEFAULT_CARRIER,
   carrierTrackingUrl,
   statusVariant,
 } from '@/lib/utils';
 import {
-  createEmptyShipment,
   updateShipment,
   deleteShipment,
   deleteShipmentItem,
@@ -148,61 +143,27 @@ export function BoxesGrid({
   boxes: ShipmentBox[];
   readOnly: boolean;
 }) {
-  const router = useRouter();
-  const [creating, setCreating] = useState(false);
-  const [pending, startTransition] = useTransition();
-
-  const handleQuickCreate = () => {
-    startTransition(async () => {
-      await createEmptyShipment({ carrier: DEFAULT_CARRIER });
-      router.refresh();
-    });
-  };
+  // Hide empty boxes — a box only matters once something is in it.
+  // Empty leftovers from previous test runs stay deletable via By Order edit mode.
+  const real = boxes.filter((b) => b.itemCount > 0);
 
   return (
     <div className="flex flex-col gap-4">
-      {!readOnly && (
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-[11px] text-text-tertiary uppercase tracking-wider">
-            {boxes.length} {boxes.length === 1 ? 'box' : 'boxes'} total
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleQuickCreate}
-              disabled={pending}
-              className="px-3 py-1.5 rounded-md text-[12px] font-medium border border-white/[0.08] text-text-secondary hover:bg-white/[0.04] disabled:opacity-50 inline-flex items-center gap-1.5"
-            >
-              {pending ? <IconLoader2 size={12} className="animate-spin" /> : <IconPlus size={12} />}
-              Quick empty box
-            </button>
-            <button
-              onClick={() => setCreating(true)}
-              className="px-3 py-1.5 rounded-md text-[12px] font-medium bg-accent text-white hover:bg-accent/90 inline-flex items-center gap-1.5"
-            >
-              <IconPackage size={13} />
-              New box with details
-            </button>
-          </div>
-        </div>
-      )}
+      <div className="text-[11px] text-text-tertiary uppercase tracking-wider">
+        {real.length} {real.length === 1 ? 'box' : 'boxes'}
+      </div>
 
-      {creating && !readOnly && (
-        <NewBoxForm onClose={() => setCreating(false)} />
-      )}
-
-      {boxes.length === 0 ? (
+      {real.length === 0 ? (
         <div className="glass p-8 text-center">
           <IconBox size={28} className="mx-auto text-text-tertiary mb-2" />
           <div className="text-[14px] font-medium text-text-secondary">No shipment boxes yet</div>
           <div className="text-[12px] text-text-tertiary mt-1">
-            {readOnly
-              ? 'Boxes will appear here once the supplier creates them.'
-              : 'Create one above, or one will be created automatically when you "Ship some" units in the Orders view.'}
+            Boxes show up here automatically when the supplier ships units from a paid order.
           </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {boxes.map((box) => (
+          {real.map((box) => (
             <BoxCard key={box.id} box={box} readOnly={readOnly} />
           ))}
         </div>
@@ -481,89 +442,6 @@ function BoxEditor({ box, onClose }: { box: ShipmentBox; onClose: () => void }) 
         </button>
       </div>
     </div>
-  );
-}
-
-function NewBoxForm({ onClose }: { onClose: () => void }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
-  const [carrier, setCarrier] = useState<string>(DEFAULT_CARRIER);
-  const [tracking, setTracking] = useState('');
-  const [eta, setEta] = useState('');
-  const [notes, setNotes] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = () => {
-    setError(null);
-    startTransition(async () => {
-      try {
-        await createEmptyShipment({
-          carrier,
-          trackingNumber: tracking || undefined,
-          eta: eta || undefined,
-          notes: notes || undefined,
-        });
-        onClose();
-        router.refresh();
-      } catch (e: any) {
-        setError(e?.message ?? 'Failed to create');
-      }
-    });
-  };
-
-  return (
-    <GlassCard className="p-4 border-accent/30">
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-[11px] uppercase tracking-wider text-accent inline-flex items-center gap-1.5 font-medium">
-          <IconPackage size={11} /> New shipment box
-        </div>
-        <button onClick={onClose} className="text-text-tertiary hover:text-text-primary">
-          <IconX size={14} />
-        </button>
-      </div>
-      <div className="grid grid-cols-2 gap-3 mb-3">
-        <Field label="Carrier">
-          <select value={carrier} onChange={(e) => setCarrier(e.target.value)} className="sheet-input text-[12px]">
-            {CARRIERS.map((c) => (
-              <option key={c} value={c} className="bg-bg-base">{c}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Tracking #" hint={tracking ? 'box will start as Shipped' : 'leave blank to start as Preparing'}>
-          <input
-            value={tracking}
-            onChange={(e) => setTracking(e.target.value)}
-            placeholder="optional"
-            className="sheet-input font-mono text-[12px]"
-          />
-        </Field>
-        <Field label="ETA (rough estimate)">
-          <input type="date" value={eta} onChange={(e) => setEta(e.target.value)} className="sheet-input text-[12px]" />
-        </Field>
-        <Field label="Notes">
-          <input
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="optional"
-            className="sheet-input text-[12px]"
-          />
-        </Field>
-      </div>
-      {error && <div className="text-[11px] text-bad mb-2">{error}</div>}
-      <div className="flex items-center gap-2 justify-end">
-        <button onClick={onClose} className="px-3 py-1.5 text-[12px] text-text-secondary hover:text-text-primary">
-          Cancel
-        </button>
-        <button
-          onClick={submit}
-          disabled={pending}
-          className="px-3 py-1.5 text-[12px] font-medium bg-accent/90 hover:bg-accent text-white rounded-md disabled:opacity-50 inline-flex items-center gap-1.5"
-        >
-          {pending ? <IconLoader2 size={13} className="animate-spin" /> : <IconTruck size={13} />}
-          Create box
-        </button>
-      </div>
-    </GlassCard>
   );
 }
 

@@ -24,7 +24,17 @@ export type OrderItemFull = {
   notes: string | null;
 };
 
-export async function getOrderItemsFull(orderId?: string): Promise<OrderItemFull[]> {
+export async function getOrderItemsFull(
+  orderId?: string,
+  opts: { paidOnly?: boolean } = {}
+): Promise<OrderItemFull[]> {
+  const whereParts: any[] = [];
+  if (orderId) whereParts.push(sql`oi.order_id = ${orderId}`);
+  if (opts.paidOnly) whereParts.push(sql`o.paid = true and o.status not in ('draft', 'cancelled')`);
+  const whereClause = whereParts.length > 0
+    ? sql`where ${sql.join(whereParts, sql` and `)}`
+    : sql``;
+
   const rows = await db.execute<{
     id: string;
     order_id: string;
@@ -62,7 +72,8 @@ export async function getOrderItemsFull(orderId?: string): Promise<OrderItemFull
       oi.notes
     from order_items oi
     left join products p on p.sku = oi.sku
-    ${orderId ? sql`where oi.order_id = ${orderId}` : sql``}
+    join orders o on o.id = oi.order_id
+    ${whereClause}
     order by oi.order_id desc, oi.created_at asc
   `);
 
@@ -97,8 +108,10 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
     items_in_production: number;
   }>(sql`
     select
-      (select count(*)::int from orders where status != 'cancelled') as open_pos,
-      (select count(*)::int from shipments where status in ('shipped','in_transit','out_for_delivery')) as boxes_in_transit,
+      (select count(*)::int from orders
+        where status not in ('draft', 'cancelled')) as open_pos,
+      (select count(*)::int from shipments
+        where status in ('shipped','in_transit','out_for_delivery')) as boxes_in_transit,
       coalesce((
         select sum(o.shipping_cost + coalesce((
           select sum(oi.qty_ordered * oi.unit_price) from order_items oi where oi.order_id = o.id
@@ -109,9 +122,12 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
           and o.payment_date >= date_trunc('month', current_date)
       ), 0) as spent_this_month,
       (select count(*)::int from order_items oi
-       where oi.qty_ordered > coalesce(
-         (select sum(si.qty)::int from shipment_items si
-          where si.order_id = oi.order_id and si.sku = oi.sku), 0)
+        join orders o on o.id = oi.order_id
+        where o.paid = true
+          and o.status not in ('draft', 'cancelled')
+          and oi.qty_ordered > coalesce(
+            (select sum(si.qty)::int from shipment_items si
+              where si.order_id = oi.order_id and si.sku = oi.sku), 0)
       ) as items_in_production
   `);
   const r = rows.rows[0];
@@ -361,7 +377,11 @@ export type OrderBranch = {
   items: OrderBranchItem[];
 };
 
-export async function getOrderBranching(): Promise<OrderBranch[]> {
+export async function getOrderBranching(opts: { paidOnly?: boolean } = {}): Promise<OrderBranch[]> {
+  const whereClause = opts.paidOnly
+    ? sql`where o.paid = true and o.status != 'draft'`
+    : sql``;
+
   const rows = await db.execute<{
     order_id: string;
     order_date: string;
@@ -412,6 +432,7 @@ export async function getOrderBranching(): Promise<OrderBranch[]> {
     left join products p on p.sku = oi.sku
     left join shipment_items si on si.order_id = oi.order_id and si.sku = oi.sku
     left join shipments s on s.id = si.shipment_id
+    ${whereClause}
     order by o.order_date desc, o.id desc, oi.created_at asc, s.ship_date asc nulls last, s.created_at asc nulls last
   `);
 

@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export default async function ShipmentsPage() {
   const user = await requireUser();
   const [branching, boxes, allShipments] = await Promise.all([
-    getOrderBranching(),
+    getOrderBranching({ paidOnly: true }),
     getAllShipmentBoxes(),
     db
       .select({

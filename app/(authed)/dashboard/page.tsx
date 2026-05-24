@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 export default async function DashboardPage() {
   const [kpis, items, ships] = await Promise.all([
     getDashboardKpis(),
-    getOrderItemsFull(),
+    getOrderItemsFull(undefined, { paidOnly: true }),
     getActiveShipments(8),
   ]);
 
