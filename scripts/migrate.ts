@@ -144,29 +144,33 @@ async function main() {
       );
       let nextN = parseInt(maxRes.rows[0]?.max_n ?? '0', 10) + 1;
 
-      await pool.query('BEGIN');
+      // Acquire a single client so BEGIN/COMMIT/ROLLBACK all stay on the same connection.
+      const client = await pool.connect();
       try {
+        await client.query('BEGIN');
         for (const row of stragglerDrafts.rows) {
           const oldId = row.id;
           const newId = `DRAFT-${String(nextN).padStart(3, '0')}`;
           nextN++;
 
-          await pool.query(
+          await client.query(
             `insert into orders (id, order_date, status, shipping_cost, paid, payment_date, notes, created_at, updated_at)
              select $1, order_date, status, shipping_cost, paid, payment_date, notes, created_at, updated_at
              from orders where id = $2`,
             [newId, oldId]
           );
-          await pool.query('update order_items set order_id = $1 where order_id = $2', [newId, oldId]);
-          await pool.query('update shipment_items set order_id = $1 where order_id = $2', [newId, oldId]);
-          await pool.query('delete from orders where id = $1', [oldId]);
+          await client.query('update order_items set order_id = $1 where order_id = $2', [newId, oldId]);
+          await client.query('update shipment_items set order_id = $1 where order_id = $2', [newId, oldId]);
+          await client.query('delete from orders where id = $1', [oldId]);
           console.log(`  ${oldId} → ${newId}`);
         }
-        await pool.query('COMMIT');
+        await client.query('COMMIT');
         console.log('✓ Draft renumber complete.');
       } catch (e) {
-        await pool.query('ROLLBACK');
+        await client.query('ROLLBACK');
         throw e;
+      } finally {
+        client.release();
       }
     }
 

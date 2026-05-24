@@ -470,12 +470,14 @@ export async function getOrderBranching(): Promise<OrderBranch[]> {
 
 export async function nextId(table: 'orders' | 'shipments', prefix: string): Promise<string> {
   // Substring starts AFTER "<prefix>-", so the offset is prefix.length + 2 (sql substring is 1-indexed).
-  const offset = prefix.length + 2;
+  // Postgres doesn't accept a parameterized integer in the substring FROM position,
+  // so we inline it via sql.raw. The prefix is a server-controlled string, never user input.
+  const offset = String(prefix.length + 2);
   const like = `${prefix}-%`;
   const rows = await db.execute<{ max_n: number }>(
     table === 'orders'
-      ? sql`select coalesce(max(substring(id from ${offset})::int), 0) as max_n from orders where id like ${like}`
-      : sql`select coalesce(max(substring(id from ${offset})::int), 0) as max_n from shipments where id like ${like}`
+      ? sql`select coalesce(max(substring(id from ${sql.raw(offset)})::int), 0) as max_n from orders where id like ${like}`
+      : sql`select coalesce(max(substring(id from ${sql.raw(offset)})::int), 0) as max_n from shipments where id like ${like}`
   );
   const n = (rows.rows[0]?.max_n ?? 0) + 1;
   return `${prefix}-${String(n).padStart(3, '0')}`;

@@ -7,7 +7,7 @@ import { SpreadsheetTable, ColumnDef } from '@/components/spreadsheet-table';
 import { formatUsd, formatDate } from '@/lib/utils';
 import { updateOrder, createOrder, deleteOrder, promoteDraftOrder } from '@/app/actions';
 import { OrderFull } from '@/lib/db/queries';
-import { IconExternalLink, IconSend, IconLoader2, IconAlertCircle } from '@tabler/icons-react';
+import { IconExternalLink, IconSend, IconLoader2, IconAlertCircle, IconFilePencil } from '@tabler/icons-react';
 import { useState } from 'react';
 
 export function OrdersTable({
@@ -36,15 +36,22 @@ export function OrdersTable({
   const baseColumns: ColumnDef<OrderFull>[] = [
     {
       key: 'id',
-      header: mode === 'draft' ? 'Draft#' : 'PO#',
-      width: '110px',
+      header: mode === 'draft' ? 'Draft' : 'PO#',
+      width: mode === 'draft' ? '140px' : '110px',
       type: 'readonly',
       render: (row) => (
         <Link
           href={`/orders/${row.id}`}
           className="px-3 py-1 -mx-3 -my-1 flex items-center justify-between gap-2 group rounded-md hover:bg-white/[0.02]"
         >
-          <span className="font-medium text-text-primary">{row.id}</span>
+          {mode === 'draft' ? (
+            <span className="inline-flex items-center gap-1.5 text-text-secondary">
+              <IconFilePencil size={12} className="text-text-tertiary" />
+              <span className="text-[12px] font-medium">Draft</span>
+            </span>
+          ) : (
+            <span className="font-medium text-text-primary">{row.id}</span>
+          )}
           <IconExternalLink size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
         </Link>
       ),

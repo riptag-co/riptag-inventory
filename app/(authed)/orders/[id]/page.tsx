@@ -45,8 +45,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       </Link>
 
       <PageHeader
-        title={order.id}
-        subtitle={`${isDraft ? 'Drafted' : 'Ordered'} ${formatDate(order.orderDate)} · ${items.length} ${items.length === 1 ? 'item' : 'items'}`}
+        title={isDraft ? 'New Order Draft' : order.id}
+        subtitle={`${isDraft ? 'Drafted' : 'Ordered'} ${formatDate(order.orderDate)} · ${items.length} ${items.length === 1 ? 'item' : 'items'}${isDraft ? ' · gets a PO number when you send to Orders' : ''}`}
       />
 
       <OrderHeader
