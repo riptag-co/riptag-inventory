@@ -15,7 +15,7 @@ export default async function LoginPage() {
             R
           </div>
           <div>
-            <div className="font-display font-semibold tracking-tight text-lg leading-none">Riptag Ops</div>
+            <div className="font-display font-semibold tracking-tight text-lg leading-none">Riptag Inventory</div>
             <div className="text-[10px] uppercase tracking-[0.12em] text-text-tertiary leading-none mt-1.5">
               Supplier console
             </div>

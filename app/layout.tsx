@@ -2,8 +2,8 @@ import './globals.css';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Riptag Ops',
-  description: 'Supplier operations dashboard',
+  title: 'Riptag Inventory',
+  description: 'Inventory and supplier dashboard',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -39,7 +39,7 @@ export function Sidebar({
         </div>
         <div>
           <div className="font-display font-semibold tracking-tight text-[15px] leading-none">Riptag</div>
-          <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary leading-none mt-1">Ops</div>
+          <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary leading-none mt-1">Inventory</div>
         </div>
       </div>
 
