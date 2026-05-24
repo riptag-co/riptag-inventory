@@ -1,17 +1,42 @@
 'use client';
 
 import Link from 'next/link';
+import { useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { SpreadsheetTable, ColumnDef } from '@/components/spreadsheet-table';
 import { formatUsd, formatDate } from '@/lib/utils';
-import { updateOrder, createOrder, deleteOrder } from '@/app/actions';
+import { updateOrder, createOrder, deleteOrder, promoteDraftOrder } from '@/app/actions';
 import { OrderFull } from '@/lib/db/queries';
-import { IconExternalLink } from '@tabler/icons-react';
+import { IconExternalLink, IconSend, IconLoader2, IconAlertCircle } from '@tabler/icons-react';
+import { useState } from 'react';
 
-export function OrdersTable({ orders }: { orders: OrderFull[] }) {
-  const columns: ColumnDef<OrderFull>[] = [
+export function OrdersTable({
+  orders,
+  mode = 'active',
+}: {
+  orders: OrderFull[];
+  mode?: 'active' | 'draft';
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<{ id: string; msg: string } | null>(null);
+
+  const handlePromote = (id: string) => {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await promoteDraftOrder(id);
+        router.refresh();
+      } catch (e: any) {
+        setError({ id, msg: e?.message ?? 'Could not promote' });
+      }
+    });
+  };
+
+  const baseColumns: ColumnDef<OrderFull>[] = [
     {
       key: 'id',
-      header: 'PO#',
+      header: mode === 'draft' ? 'Draft#' : 'PO#',
       width: '110px',
       type: 'readonly',
       render: (row) => (
@@ -33,65 +58,104 @@ export function OrdersTable({ orders }: { orders: OrderFull[] }) {
       align: 'right',
     },
     {
-      key: 'subtotal',
-      header: 'Goods',
-      width: '110px',
-      type: 'readonly',
-      align: 'right',
-      format: (v) => formatUsd(Number(v)),
-    },
-    {
-      key: 'shippingCost',
-      header: 'Shipping',
-      width: '110px',
-      type: 'currency',
-      align: 'right',
-      format: (v) => formatUsd(Number(v)),
-    },
-    {
       key: 'total',
-      header: 'Total',
+      header: mode === 'draft' ? 'Quote' : 'Total',
       width: '120px',
       type: 'readonly',
       align: 'right',
-      format: (v) => formatUsd(Number(v)),
+      render: (row) =>
+        row.total > 0 ? (
+          <span className="font-semibold text-accent num-display">{formatUsd(row.total)}</span>
+        ) : (
+          <span className="text-text-tertiary italic text-[11px]">awaiting price</span>
+        ),
     },
-    {
-      key: 'paid',
-      header: 'Paid',
-      width: '80px',
-      type: 'select',
-      options: [
-        { value: 'true', label: 'Yes' },
-        { value: 'false', label: 'No' },
-      ],
-      align: 'center',
-      render: (row) => (
-        <span className={row.paid ? 'text-ok font-medium' : 'text-bad font-medium'}>
-          {row.paid ? '✓ Paid' : '— Unpaid'}
-        </span>
-      ),
-    },
-    { key: 'paymentDate', header: 'Paid on', width: '120px', type: 'date', format: formatDate },
-    { key: 'notes', header: 'Notes', type: 'text' },
   ];
+
+  if (mode === 'active') {
+    baseColumns.push(
+      {
+        key: 'paid',
+        header: 'Paid',
+        width: '100px',
+        type: 'select',
+        options: [
+          { value: 'true', label: 'Yes' },
+          { value: 'false', label: 'No' },
+        ],
+        align: 'center',
+        render: (row) => (
+          <span className={row.paid ? 'text-ok font-medium' : 'text-warn font-medium'}>
+            {row.paid ? '✓ Paid' : '— Unpaid'}
+          </span>
+        ),
+      },
+      { key: 'paymentDate', header: 'Paid on', width: '120px', type: 'date', format: formatDate },
+    );
+  } else {
+    baseColumns.push({
+      key: 'notes' as any,
+      header: 'Promote',
+      width: '160px',
+      type: 'readonly',
+      render: (row) => (
+        <div className="flex flex-col gap-0.5">
+          <button
+            onClick={() => handlePromote(row.id)}
+            disabled={pending || row.total <= 0 || row.lineCount === 0}
+            className="inline-flex items-center gap-1.5 text-[11px] font-medium text-accent hover:underline disabled:text-text-tertiary disabled:no-underline disabled:cursor-not-allowed"
+            title={
+              row.lineCount === 0
+                ? 'Add items first'
+                : row.total <= 0
+                ? 'Supplier must set prices first'
+                : 'Move to Orders for payment'
+            }
+          >
+            {pending && error?.id !== row.id ? (
+              <IconLoader2 size={11} className="animate-spin" />
+            ) : (
+              <IconSend size={11} />
+            )}
+            Send to Orders
+          </button>
+          {error?.id === row.id && (
+            <span className="text-[10px] text-bad inline-flex items-center gap-1">
+              <IconAlertCircle size={10} /> {error.msg}
+            </span>
+          )}
+        </div>
+      ),
+    });
+  }
+
+  baseColumns.push({ key: 'notes', header: 'Notes', type: 'text' });
 
   return (
     <SpreadsheetTable
-      columns={columns}
+      columns={baseColumns}
       rows={orders}
       onUpdate={async (id, field, value) => {
         if (field === 'paid') value = value === 'true';
         await updateOrder(id, field, value);
       }}
-      onCreate={async () => { await createOrder({}); }}
+      onCreate={async () => {
+        await createOrder({ status: mode === 'draft' ? 'draft' : 'pending_payment' });
+        router.refresh();
+      }}
       onDelete={deleteOrder}
       rowClassName={(row) =>
-        row.paid
+        mode === 'draft'
+          ? '[&>td]:!bg-white/[0.015] [&>td:first-child]:border-l-2 [&>td:first-child]:border-l-text-tertiary/40'
+          : row.paid
           ? '[&>td]:!bg-ok/[0.025] [&>td:first-child]:border-l-2 [&>td:first-child]:border-l-ok/40'
           : '[&>td]:!bg-warn/[0.04] [&>td:first-child]:border-l-2 [&>td:first-child]:border-l-warn/50'
       }
-      emptyMessage="No orders yet. Click 'Add row' to create your first PO."
+      emptyMessage={
+        mode === 'draft'
+          ? 'No drafts yet. Click "Add row" to start a new order.'
+          : 'No orders yet. Click "Add row" to create your first PO.'
+      }
     />
   );
 }

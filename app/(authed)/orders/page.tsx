@@ -1,20 +1,18 @@
-import Link from 'next/link';
 import { getOrdersFull } from '@/lib/db/queries';
-import { PageHeader, GlassCard, StatusPill } from '@/components/ui';
-import { formatUsd, formatNum, formatDate, ORDER_STATUS_LABELS } from '@/lib/utils';
+import { PageHeader } from '@/components/ui';
 import { OrdersTable } from './table';
 
 export const dynamic = 'force-dynamic';
 
 export default async function OrdersPage() {
-  const orders = await getOrdersFull();
+  const orders = await getOrdersFull({ excludeStatus: 'draft' });
   return (
     <>
       <PageHeader
         title="Orders"
-        subtitle="Every purchase order. Click any row to see the line items and branching shipments."
+        subtitle="Priced and confirmed. Yellow = needs payment, green = paid and shipping."
       />
-      <OrdersTable orders={orders} />
+      <OrdersTable orders={orders} mode="active" />
     </>
   );
 }

@@ -20,16 +20,22 @@ export function OrderItemsGrid({
   items,
   catalog,
   readOnly,
+  allowOnlyPriceEdit = false,
 }: {
   orderId: string;
   items: OrderItemFull[];
   catalog: CatalogProduct[];
   readOnly: boolean;
+  /** Supplier-on-draft mode: can edit unitPrice only, no add/delete */
+  allowOnlyPriceEdit?: boolean;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const router = useRouter();
 
   const usedSkus = new Set(items.map((i) => i.sku));
+  const canAddOrDelete = !readOnly && !allowOnlyPriceEdit;
+  const canEditQty = !readOnly && !allowOnlyPriceEdit;
+  const canEditPrice = !readOnly;
 
   const handlePick = async (p: CatalogProduct) => {
     setPickerOpen(false);
@@ -45,9 +51,15 @@ export function OrderItemsGrid({
     <>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
         {items.map((item) => (
-          <LineCard key={item.id} item={item} readOnly={readOnly} />
+          <LineCard
+            key={item.id}
+            item={item}
+            canEditQty={canEditQty}
+            canEditPrice={canEditPrice}
+            canDelete={canAddOrDelete}
+          />
         ))}
-        {!readOnly && (
+        {canAddOrDelete && (
           <button
             onClick={() => setPickerOpen(true)}
             className="glass glass-hover aspect-[3/4] flex flex-col items-center justify-center gap-2 text-text-tertiary hover:text-text-primary cursor-pointer"
@@ -75,7 +87,17 @@ export function OrderItemsGrid({
   );
 }
 
-function LineCard({ item, readOnly }: { item: OrderItemFull; readOnly: boolean }) {
+function LineCard({
+  item,
+  canEditQty,
+  canEditPrice,
+  canDelete,
+}: {
+  item: OrderItemFull;
+  canEditQty: boolean;
+  canEditPrice: boolean;
+  canDelete: boolean;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [qty, setQty] = useState(String(item.qtyOrdered));
@@ -119,7 +141,7 @@ function LineCard({ item, readOnly }: { item: OrderItemFull; readOnly: boolean }
             <IconBox size={28} strokeWidth={1.5} />
           </div>
         )}
-        {!readOnly && (
+        {canDelete && (
           <button
             onClick={handleDelete}
             disabled={pending}
@@ -149,7 +171,7 @@ function LineCard({ item, readOnly }: { item: OrderItemFull; readOnly: boolean }
               onChange={(e) => setQty(e.target.value)}
               onBlur={saveQty}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-              disabled={readOnly}
+              disabled={!canEditQty}
               className="sheet-input num-display text-[13px] font-semibold"
             />
           </div>
@@ -163,8 +185,12 @@ function LineCard({ item, readOnly }: { item: OrderItemFull; readOnly: boolean }
               onChange={(e) => setPrice(e.target.value)}
               onBlur={savePrice}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-              disabled={readOnly}
-              className="sheet-input num-display text-[12px]"
+              disabled={!canEditPrice}
+              placeholder={!Number(price) ? '—' : undefined}
+              className={cn(
+                'sheet-input num-display text-[12px]',
+                !Number(price) && 'border-warn/40 bg-warn/[0.04]'
+              )}
             />
           </div>
         </div>

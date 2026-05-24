@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   IconChevronDown,
@@ -13,9 +13,21 @@ import {
   IconPackage,
   IconBox,
   IconCash,
+  IconEdit,
+  IconCheck,
+  IconCircle,
 } from '@tabler/icons-react';
-import { GlassCard, StatusPill, SectionTitle } from '@/components/ui';
-import { cn, formatDate, formatNum, SHIPMENT_STATUS_LABELS } from '@/lib/utils';
+import { GlassCard } from '@/components/ui';
+import {
+  cn,
+  formatDate,
+  formatNum,
+  SHIPMENT_STATUS_LABELS,
+  rollupShipmentStage,
+  STAGE_LABELS,
+  statusVariant,
+  type ShipmentStageStatus,
+} from '@/lib/utils';
 import {
   shipSome,
   updateShipment,
@@ -28,6 +40,33 @@ const SHIPMENT_STATUS_OPTIONS = Object.entries(SHIPMENT_STATUS_LABELS).map(([val
   value,
   label,
 }));
+
+const CARRIER_OPTIONS = ['UPS', 'DHL', 'FedEx', 'USPS', 'SF Express', 'Other'];
+
+function variantClasses(variant: ReturnType<typeof statusVariant>) {
+  switch (variant) {
+    case 'ok':
+      return { text: 'text-ok', bg: 'bg-ok/15', border: 'border-ok/40', dot: 'bg-ok' };
+    case 'warn':
+      return { text: 'text-warn', bg: 'bg-warn/15', border: 'border-warn/40', dot: 'bg-warn' };
+    case 'info':
+      return { text: 'text-info', bg: 'bg-info/15', border: 'border-info/40', dot: 'bg-info' };
+    case 'bad':
+      return { text: 'text-bad', bg: 'bg-bad/15', border: 'border-bad/40', dot: 'bg-bad' };
+    default:
+      return { text: 'text-text-secondary', bg: 'bg-white/[0.04]', border: 'border-white/[0.10]', dot: 'bg-text-tertiary' };
+  }
+}
+
+function StagePill({ stage, label }: { stage: ShipmentStageStatus | string; label?: string }) {
+  const cls = variantClasses(statusVariant(stage));
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border', cls.text, cls.bg, cls.border)}>
+      <span className={cn('w-1.5 h-1.5 rounded-full', cls.dot)} />
+      {label ?? stage}
+    </span>
+  );
+}
 
 export function ShipmentsTree({
   orders,
@@ -117,9 +156,26 @@ function OrderBranchCard({
   readOnly: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
+
   const totalOrdered = order.items.reduce((s, i) => s + i.qtyOrdered, 0);
   const totalShipped = order.items.reduce((s, i) => s + i.qtyShipped, 0);
-  const allComplete = totalShipped >= totalOrdered;
+
+  const allShipStatuses = order.items.flatMap((i) => i.shipments.map((s) => s.status));
+  const stage: ShipmentStageStatus = totalShipped === 0
+    ? 'not_started'
+    : rollupShipmentStage(allShipStatuses);
+
+  // For "fully shipped" detection: every item must have qtyShipped >= qtyOrdered
+  const everythingAllocated = order.items.every((i) => i.qtyShipped >= i.qtyOrdered);
+  const allDelivered = everythingAllocated && stage === 'all_delivered';
+
+  const displayStage: ShipmentStageStatus = totalShipped === 0
+    ? 'not_started'
+    : !everythingAllocated
+    ? stage === 'all_delivered'
+      ? 'in_transit'
+      : stage
+    : stage;
 
   return (
     <GlassCard className="overflow-hidden">
@@ -142,21 +198,13 @@ function OrderBranchCard({
             <div className="text-[11px] text-text-tertiary mt-0.5">
               {order.items.length} {order.items.length === 1 ? 'item' : 'items'} ·{' '}
               <span className="num-display">{formatNum(totalShipped)}</span> of{' '}
-              <span className="num-display">{formatNum(totalOrdered)}</span> units shipped
+              <span className="num-display">{formatNum(totalOrdered)}</span> units allocated
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {order.paid ? (
-            <StatusPill status="ok" label="paid" />
-          ) : (
-            <StatusPill status="bad" label="unpaid" />
-          )}
-          {allComplete ? (
-            <StatusPill status="ok" label="all shipped" />
-          ) : (
-            <StatusPill status="warn" label="in progress" />
-          )}
+          <StagePill stage={order.paid ? 'paid' : 'pending_payment'} label={order.paid ? 'paid' : 'unpaid'} />
+          <StagePill stage={displayStage} label={STAGE_LABELS[displayStage] ?? displayStage} />
         </div>
       </button>
 
@@ -191,6 +239,15 @@ function ItemBranch({
   const [showShipForm, setShowShipForm] = useState(false);
   const pct = item.qtyOrdered === 0 ? 0 : Math.min(100, (item.qtyShipped / item.qtyOrdered) * 100);
   const allShipped = item.qtyRemaining <= 0;
+  const itemStage = rollupShipmentStage(item.shipments.map((s) => s.status));
+
+  const barColor = !allShipped
+    ? 'bg-warn'
+    : itemStage === 'all_delivered'
+    ? 'bg-ok'
+    : itemStage === 'in_transit'
+    ? 'bg-info'
+    : 'bg-warn';
 
   return (
     <div className="px-5 py-4 grid grid-cols-[80px_1fr] gap-4">
@@ -218,17 +275,19 @@ function ItemBranch({
             </div>
             {item.qtyRemaining > 0 ? (
               <div className="text-[10px] text-warn mt-0.5">
-                <span className="num-display font-medium">{formatNum(item.qtyRemaining)}</span> owed
+                <span className="num-display font-medium">{formatNum(item.qtyRemaining)}</span> still in production
               </div>
             ) : (
-              <div className="text-[10px] text-ok mt-0.5">complete</div>
+              <div className={cn('text-[10px] mt-0.5', itemStage === 'all_delivered' ? 'text-ok' : 'text-info')}>
+                {itemStage === 'all_delivered' ? 'all delivered ✓' : 'allocated'}
+              </div>
             )}
           </div>
         </div>
 
         <div className="h-1 bg-white/[0.04] rounded-full overflow-hidden mb-3">
           <div
-            className={cn('h-full rounded-full transition-all', allShipped ? 'bg-ok' : 'bg-accent')}
+            className={cn('h-full rounded-full transition-all', barColor)}
             style={{ width: `${pct}%` }}
           />
         </div>
@@ -282,9 +341,12 @@ function ShipmentRow({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [editingQty, setEditingQty] = useState(false);
-  const [qty, setQty] = useState(String(shipment.qty));
   const [editingTracking, setEditingTracking] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [qty, setQty] = useState(String(shipment.qty));
   const [tracking, setTracking] = useState(shipment.trackingNumber ?? '');
+
+  const cls = variantClasses(statusVariant(shipment.status));
 
   const saveQty = () => {
     setEditingQty(false);
@@ -305,9 +367,9 @@ function ShipmentRow({
     });
   };
 
-  const updateStatus = (newStatus: string) => {
+  const updateField = (field: string, value: any) => {
     startTransition(async () => {
-      await updateShipment(shipment.shipmentId, 'status', newStatus);
+      await updateShipment(shipment.shipmentId, field, value);
       router.refresh();
     });
   };
@@ -323,8 +385,7 @@ function ShipmentRow({
   return (
     <div className="relative pl-5 py-1.5 group">
       <span
-        className="absolute left-0 top-0 bottom-0 w-px bg-white/[0.08]"
-        style={isLast ? { bottom: 'calc(100% - 18px)' } : undefined}
+        className={cn('absolute left-0 top-0 w-px bg-white/[0.08]', isLast ? 'h-[18px]' : 'bottom-0')}
       />
       <span className="absolute left-0 top-[18px] w-3 h-px bg-white/[0.08]" />
 
@@ -362,7 +423,7 @@ function ShipmentRow({
 
         <span className="text-text-tertiary text-[11px]">·</span>
 
-        <span className="text-[11px] text-text-secondary">{shipment.carrier ?? '—'}</span>
+        <span className="text-[11px] text-text-secondary">{shipment.carrier ?? <span className="italic text-text-tertiary">no carrier</span>}</span>
 
         {editingTracking && !readOnly ? (
           <input
@@ -385,7 +446,7 @@ function ShipmentRow({
             disabled={readOnly}
             onClick={() => !readOnly && setEditingTracking(true)}
             className={cn(
-              'font-mono text-[11px] text-text-tertiary px-1.5 py-0.5 -mx-1.5 rounded',
+              'font-mono text-[11px] text-text-tertiary px-1.5 py-0.5 -mx-1.5 rounded truncate max-w-[200px]',
               !readOnly && 'hover:bg-white/[0.04] cursor-text'
             )}
           >
@@ -394,39 +455,154 @@ function ShipmentRow({
         )}
 
         {readOnly ? (
-          <StatusPill status={shipment.status} label={SHIPMENT_STATUS_LABELS[shipment.status as keyof typeof SHIPMENT_STATUS_LABELS]} />
+          <StagePill stage={shipment.status} label={SHIPMENT_STATUS_LABELS[shipment.status]} />
         ) : (
           <select
             value={shipment.status}
-            onChange={(e) => updateStatus(e.target.value)}
+            onChange={(e) => updateField('status', e.target.value)}
             disabled={pending}
-            className="bg-transparent border border-white/[0.06] rounded-full px-2 py-0.5 text-[11px] text-text-secondary hover:bg-white/[0.04] cursor-pointer"
+            className={cn(
+              'border rounded-full px-2.5 py-1 text-[11px] font-medium cursor-pointer transition',
+              cls.text,
+              cls.bg,
+              cls.border
+            )}
           >
             {SHIPMENT_STATUS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value} className="bg-bg-base">
+              <option key={o.value} value={o.value} className="bg-bg-base text-text-primary">
                 {o.label}
               </option>
             ))}
           </select>
         )}
 
-        {shipment.eta && (
+        {shipment.eta && !expanded && (
           <span className="text-[10px] text-text-tertiary inline-flex items-center gap-1">
             <IconCalendar size={10} /> ETA {formatDate(shipment.eta)}
           </span>
         )}
 
-        {!readOnly && (
-          <button
-            onClick={removeAllocation}
-            disabled={pending}
-            className="ml-auto opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-bad transition"
-            title="Remove this allocation"
-          >
-            <IconX size={13} />
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-1">
+          {!readOnly && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-text-tertiary hover:text-text-primary transition px-1.5 py-0.5 text-[10px] inline-flex items-center gap-1 rounded hover:bg-white/[0.04]"
+              title={expanded ? 'Hide details' : 'Edit details'}
+            >
+              <IconEdit size={11} />
+              {expanded ? 'less' : 'details'}
+            </button>
+          )}
+          {!readOnly && (
+            <button
+              onClick={removeAllocation}
+              disabled={pending}
+              className="opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-bad transition p-1"
+              title="Remove this allocation"
+            >
+              <IconX size={12} />
+            </button>
+          )}
+        </div>
       </div>
+
+      {expanded && !readOnly && (
+        <ShipmentDetailEditor shipment={shipment} pending={pending} onUpdate={updateField} />
+      )}
+    </div>
+  );
+}
+
+function ShipmentDetailEditor({
+  shipment,
+  pending,
+  onUpdate,
+}: {
+  shipment: OrderBranchShipment;
+  pending: boolean;
+  onUpdate: (field: string, value: any) => void;
+}) {
+  const [carrier, setCarrier] = useState(shipment.carrier ?? 'UPS');
+  const [shipDate, setShipDate] = useState(shipment.shipDate ?? '');
+  const [eta, setEta] = useState(shipment.eta ?? '');
+  const [actualDelivery, setActualDelivery] = useState(shipment.actualDelivery ?? '');
+  const [notes, setNotes] = useState(shipment.notes ?? '');
+
+  return (
+    <div className="mt-2 ml-3 p-3 rounded-md bg-white/[0.02] border border-white/[0.06]">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="Carrier">
+          <select
+            value={carrier}
+            onChange={(e) => {
+              setCarrier(e.target.value);
+              onUpdate('carrier', e.target.value);
+            }}
+            disabled={pending}
+            className="sheet-input text-[12px]"
+          >
+            {CARRIER_OPTIONS.map((c) => (
+              <option key={c} value={c} className="bg-bg-base">{c}</option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Shipped date">
+          <input
+            type="date"
+            value={shipDate}
+            onChange={(e) => setShipDate(e.target.value)}
+            onBlur={() => shipDate !== (shipment.shipDate ?? '') && onUpdate('shipDate', shipDate)}
+            disabled={pending}
+            className="sheet-input text-[12px]"
+          />
+        </Field>
+
+        <Field label="ETA">
+          <input
+            type="date"
+            value={eta}
+            onChange={(e) => setEta(e.target.value)}
+            onBlur={() => eta !== (shipment.eta ?? '') && onUpdate('eta', eta)}
+            disabled={pending}
+            className="sheet-input text-[12px]"
+          />
+        </Field>
+
+        <Field label="Delivered on">
+          <input
+            type="date"
+            value={actualDelivery}
+            onChange={(e) => setActualDelivery(e.target.value)}
+            onBlur={() => actualDelivery !== (shipment.actualDelivery ?? '') && onUpdate('actualDelivery', actualDelivery)}
+            disabled={pending}
+            className="sheet-input text-[12px]"
+          />
+        </Field>
+
+        <div className="sm:col-span-2">
+          <Field label="Box notes">
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              onBlur={() => notes !== (shipment.notes ?? '') && onUpdate('notes', notes)}
+              disabled={pending}
+              rows={2}
+              className="sheet-input text-[12px] resize-none"
+              placeholder="Anything about this shipment…"
+            />
+          </Field>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="text-[9px] uppercase tracking-wider text-text-tertiary block mb-1">{label}</label>
+      {children}
     </div>
   );
 }
@@ -558,7 +734,7 @@ function ShipSomeForm({
             <>
               <label className="text-[11px] text-text-secondary">Carrier</label>
               <select value={carrier} onChange={(e) => setCarrier(e.target.value)} className="sheet-input text-[12px]">
-                {['UPS', 'DHL', 'FedEx', 'USPS', 'SF Express', 'Other'].map((c) => (
+                {CARRIER_OPTIONS.map((c) => (
                   <option key={c} value={c} className="bg-bg-base">
                     {c}
                   </option>

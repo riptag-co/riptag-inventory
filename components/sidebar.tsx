@@ -7,7 +7,7 @@ import {
   IconShoppingBag,
   IconTruck,
   IconBox,
-  IconStar,
+  IconFilePencil,
   IconLogout,
   type Icon,
 } from '@tabler/icons-react';
@@ -17,10 +17,10 @@ type Item = { href: string; label: string; icon: Icon; ownerOnly?: boolean };
 
 const ITEMS: Item[] = [
   { href: '/dashboard', label: 'Dashboard', icon: IconLayoutDashboard },
+  { href: '/new-orders', label: 'New Orders', icon: IconFilePencil },
   { href: '/orders', label: 'Orders', icon: IconShoppingBag },
   { href: '/shipments', label: 'Shipments', icon: IconTruck },
   { href: '/catalog', label: 'Catalog', icon: IconBox },
-  { href: '/wishlist', label: 'Wishlist', icon: IconStar },
 ];
 
 export function Sidebar({

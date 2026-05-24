@@ -59,9 +59,39 @@ export const SHIPMENT_STATUS_LABELS: Record<string, string> = {
 };
 
 export function statusVariant(status: string): 'ok' | 'warn' | 'bad' | 'info' | 'neutral' {
-  if (['complete', 'delivered', 'received', 'paid'].includes(status)) return 'ok';
-  if (['partial_shipped', 'in_transit', 'shipped', 'out_for_delivery', 'partial'].includes(status)) return 'warn';
-  if (['pending_payment', 'delayed', 'lost', 'cancelled', 'not_started'].includes(status)) return 'bad';
-  if (['in_production', 'draft', 'preparing'].includes(status)) return 'info';
+  // green / done
+  if (['complete', 'delivered', 'received', 'paid', 'all_delivered', 'ok'].includes(status)) return 'ok';
+  // blue / moving
+  if (['in_transit', 'shipped', 'out_for_delivery', 'in_progress'].includes(status)) return 'info';
+  // yellow / needs action
+  if (['preparing', 'pending_payment', 'partial', 'partial_shipped', 'awaiting_quote', 'warn'].includes(status)) return 'warn';
+  // red / problem
+  if (['delayed', 'lost', 'cancelled', 'not_started', 'bad'].includes(status)) return 'bad';
+  // grey / draft / unknown
+  if (['draft', 'in_production'].includes(status)) return 'neutral';
   return 'neutral';
 }
+
+export type ShipmentStageStatus = 'not_started' | 'preparing' | 'in_transit' | 'all_delivered';
+
+/**
+ * Roll up many shipment statuses into a single stage for an order or item.
+ * Worst-cased: preparing beats in_transit, in_transit beats all_delivered.
+ */
+export function rollupShipmentStage(statuses: string[]): ShipmentStageStatus {
+  if (statuses.length === 0) return 'not_started';
+  const hasPreparing = statuses.some((s) => s === 'preparing');
+  const hasMoving = statuses.some((s) => ['shipped', 'in_transit', 'out_for_delivery', 'delayed'].includes(s));
+  const allDone = statuses.every((s) => ['delivered', 'received'].includes(s));
+  if (allDone) return 'all_delivered';
+  if (hasPreparing) return 'preparing';
+  if (hasMoving) return 'in_transit';
+  return 'preparing';
+}
+
+export const STAGE_LABELS: Record<ShipmentStageStatus, string> = {
+  not_started: 'Not started',
+  preparing: 'Preparing',
+  in_transit: 'In transit',
+  all_delivered: 'All delivered',
+};

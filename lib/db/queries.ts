@@ -136,7 +136,13 @@ export type OrderFull = {
   lineCount: number;
 };
 
-export async function getOrdersFull(): Promise<OrderFull[]> {
+export async function getOrdersFull(opts: { onlyStatus?: string; excludeStatus?: string } = {}): Promise<OrderFull[]> {
+  const whereClause = opts.onlyStatus
+    ? sql`where o.status = ${opts.onlyStatus}::order_status`
+    : opts.excludeStatus
+    ? sql`where o.status != ${opts.excludeStatus}::order_status`
+    : sql``;
+
   const rows = await db.execute<{
     id: string;
     order_date: string;
@@ -161,6 +167,7 @@ export async function getOrdersFull(): Promise<OrderFull[]> {
       o.notes,
       (select count(*)::int from order_items oi where oi.order_id = o.id) as line_count
     from orders o
+    ${whereClause}
     order by o.order_date desc, o.id desc
   `);
   return rows.rows.map((r) => ({

@@ -84,19 +84,52 @@ export async function updateOrder(id: string, field: string, value: any) {
   revalidatePath('/dashboard');
 }
 
-export async function createOrder(_row: any) {
+export async function createOrder(opts: { status?: 'draft' | 'pending_payment' } = {}) {
   await requireOwner();
   const id = await nextId('orders', 'PO');
   const today = new Date().toISOString().slice(0, 10);
   await db.insert(orders).values({
     id,
     orderDate: today,
-    status: 'draft',
+    status: opts.status ?? 'pending_payment',
     shippingCost: '0',
     paid: false,
   });
   revalidatePath('/orders');
+  revalidatePath('/new-orders');
   return id;
+}
+
+export async function promoteDraftOrder(orderId: string) {
+  await requireOwner();
+  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) throw new Error('Order not found');
+  if (order.status !== 'draft') throw new Error('Order is not a draft');
+
+  // Make sure every item has a price
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  if (items.length === 0) throw new Error('Order has no items — add at least one before promoting');
+  const unpriced = items.filter((i) => !i.unitPrice || Number(i.unitPrice) <= 0);
+  if (unpriced.length > 0) {
+    throw new Error(`${unpriced.length} item(s) missing a price. Wait for supplier to quote.`);
+  }
+
+  await db.update(orders).set({ status: 'pending_payment', updatedAt: new Date() }).where(eq(orders.id, orderId));
+  revalidatePath('/orders');
+  revalidatePath('/new-orders');
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath('/dashboard');
+}
+
+export async function revertToDraft(orderId: string) {
+  await requireOwner();
+  await db
+    .update(orders)
+    .set({ status: 'draft', paid: false, paymentDate: null, updatedAt: new Date() })
+    .where(eq(orders.id, orderId));
+  revalidatePath('/orders');
+  revalidatePath('/new-orders');
+  revalidatePath(`/orders/${orderId}`);
 }
 
 export async function deleteOrder(id: string) {
@@ -106,13 +139,30 @@ export async function deleteOrder(id: string) {
 }
 
 export async function updateOrderItem(id: string, field: string, value: any) {
-  await requireOwner();
+  const user = await requireUser();
+
+  if (user.role !== 'owner') {
+    // Suppliers may only edit unitPrice, and only on draft orders
+    if (field !== 'unitPrice') throw new Error('Suppliers can only edit price');
+    const [row] = await db
+      .select({ status: orders.status })
+      .from(orderItems)
+      .innerJoin(orders, eq(orders.id, orderItems.orderId))
+      .where(eq(orderItems.id, id))
+      .limit(1);
+    if (!row || row.status !== 'draft') {
+      throw new Error('Price can only be set on draft orders');
+    }
+  }
+
   const patch: any = {};
   if (field === 'qtyOrdered') patch[field] = coerceInt(value);
   else if (field === 'unitPrice') patch[field] = String(coerceNumber(value));
   else patch[field] = value === '' ? null : value;
   await db.update(orderItems).set(patch).where(eq(orderItems.id, id));
   revalidatePath('/orders');
+  revalidatePath('/new-orders');
+  revalidatePath(`/orders/${id}`);
   revalidatePath('/dashboard');
 }
 
