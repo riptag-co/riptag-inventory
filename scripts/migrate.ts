@@ -130,6 +130,46 @@ async function main() {
     await pool.query(SCHEMA_SQL);
     console.log('✓ Schema ready.');
 
+    // One-time data fix: any draft orders still using the old PO-XXX numbering
+    // get renamed to DRAFT-XXX so PO numbers stay reserved for confirmed orders.
+    // Idempotent — once renamed, the query finds nothing on subsequent runs.
+    const stragglerDrafts = await pool.query<{ id: string }>(
+      "select id from orders where status = 'draft' and id like 'PO-%' order by id"
+    );
+    if (stragglerDrafts.rows.length > 0) {
+      console.log(`Renaming ${stragglerDrafts.rows.length} legacy PO-* draft(s) to DRAFT-*...`);
+
+      const maxRes = await pool.query<{ max_n: string }>(
+        "select coalesce(max(substring(id from 7)::int), 0)::text as max_n from orders where id like 'DRAFT-%'"
+      );
+      let nextN = parseInt(maxRes.rows[0]?.max_n ?? '0', 10) + 1;
+
+      await pool.query('BEGIN');
+      try {
+        for (const row of stragglerDrafts.rows) {
+          const oldId = row.id;
+          const newId = `DRAFT-${String(nextN).padStart(3, '0')}`;
+          nextN++;
+
+          await pool.query(
+            `insert into orders (id, order_date, status, shipping_cost, paid, payment_date, notes, created_at, updated_at)
+             select $1, order_date, status, shipping_cost, paid, payment_date, notes, created_at, updated_at
+             from orders where id = $2`,
+            [newId, oldId]
+          );
+          await pool.query('update order_items set order_id = $1 where order_id = $2', [newId, oldId]);
+          await pool.query('update shipment_items set order_id = $1 where order_id = $2', [newId, oldId]);
+          await pool.query('delete from orders where id = $1', [oldId]);
+          console.log(`  ${oldId} → ${newId}`);
+        }
+        await pool.query('COMMIT');
+        console.log('✓ Draft renumber complete.');
+      } catch (e) {
+        await pool.query('ROLLBACK');
+        throw e;
+      }
+    }
+
     const result = await pool.query<{ count: string }>('select count(*)::text as count from users');
     const userCount = parseInt(result.rows[0].count, 10);
 
