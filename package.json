@@ -8,8 +8,8 @@
     "start": "next start -p ${PORT:-3000}",
     "lint": "next lint",
     "db:push": "drizzle-kit push",
-    "db:seed": "tsx scripts/seed.ts",
-    "postinstall": "tsx scripts/migrate.ts || true"
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
     "@tabler/icons-react": "^3.18.0",
